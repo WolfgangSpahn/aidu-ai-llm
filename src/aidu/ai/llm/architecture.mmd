@@ -1,0 +1,29 @@
+flowchart LR
+
+    subgraph Agent Layer
+        A[LLMAgent]
+    end
+
+    subgraph Prompt Layer
+        B[PromptBuilder]
+        C[SafeFormat]
+    end
+
+    subgraph LLM Layer
+        D[LLMClient]
+        E[OpenAI API]
+    end
+
+    subgraph Tool Layer
+        F[ToolRegistry]
+        G[User Functions]
+    end
+
+    A --> B
+    B --> C
+
+    A --> D
+    D --> E
+
+    A --> F
+    F --> G

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Chat</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background: #f7f7f8;
+    }
+
+    #messages {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .msg {
+      padding: 10px 14px;
+      border-radius: 12px;
+      max-width: 80%;
+      line-height: 1.4;
+    }
+
+    .user {
+      background: #2563eb;
+      color: white;
+      align-self: flex-end;
+    }
+
+    .assistant {
+      background: white;
+      border: 1px solid #ddd;
+      align-self: flex-start;
+    }
+
+    .loading {
+      opacity: 0.6;
+      font-style: italic;
+    }
+
+    form {
+      display: flex;
+      gap: 8px;
+    }
+
+    input {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="messages"></div>
+
+  <form id="form">
+    <input id="input" placeholder="Type a message..." autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
