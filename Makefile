@@ -6,6 +6,8 @@ MAKE=make
 SRC=aidu.ai.llm
 APP=app/
 
+.PHONY: help install clean wipe serve run smoke test curl web.build
+
 help:    ## Show this help
 	@grep -h "##" $(MAKEFILE_LIST) | grep -v grep | sed -e "s/\$$//" -e "s/##//"
 
@@ -15,9 +17,6 @@ install: ## Install dependencies and set up environment
 
 	@echo "Upgrading pip"
 	@$(UV) run python -m ensurepip --upgrade
-
-show:   ## Show installed packages
-	$(UV) pip list
 
 clean:  ## Clean temporary and cache files
 	rm -rf .pytest_cache

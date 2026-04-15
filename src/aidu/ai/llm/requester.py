@@ -1,3 +1,15 @@
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
+#
+
+"""
+    LLMRequester manages prompts, tools, and interactions with the LLM client.
+    Provides methods to build system prompts, update them dynamically, and run agents
+    with messages and state, including support for function calls from LLM responses.
+"""
+
 import os
 import json
 import logging
@@ -15,17 +27,22 @@ from .safeformat import SafeFormat
 logger = logging.getLogger(__name__)
 
 class LLMRequester:
-    """LLMRequester is responsible for managing prompts, tools, and interactions with the LLM client. It provides methods to build system prompts, update them dynamically, and run the agent with given messages and state. It also supports function calls from the LLM response to modify the state.
-    Example usage:
-        client = LLMClient(api_key)
-        prompt = "You are a {subject} tutor. Problem: {problem}"
-        tools = [...]  # define tools if needed
-        agent = LLMRequester(client, prompt_template=prompt, tools=tools)
-        agent.register("add_numbers", add_numbers_fn)
-        system_messages = agent.build_system_prompt({"subject": "math", "problem": "2 + 3"})
-        user_messages = [{"role": "user", "content": "What is 2 + 3? Use the tool."}]
-        state = {}
-        msg, state = agent.run(system_messages + user_messages, model="gpt-4o-mini", state=state)
+    """
+      LLMRequester is responsible for managing prompts, tools, and interactions with the LLM client.
+      It provides methods to build system prompts, update them dynamically, and run the agent with given messages and state.
+      It also supports function calls from the LLM response to modify the state.
+
+      Example usage:
+            client = LLMClient(api_key)
+            prompt = "You are a {subject} tutor. Problem: {problem}"
+            tools = [...]  # define tools if needed
+            agent = LLMRequester(client, prompt_template=prompt, tools=tools)
+
+            agent.register("add_numbers", add_numbers_fn)
+            system_messages = agent.build_system_prompt({"subject": "math", "problem": "2 + 3"})
+            user_messages = [{"role": "user", "content": "What is 2 + 3? Use the tool."}]
+            state = {}
+            msg, state = agent.run(system_messages + user_messages, model="gpt-4o-mini", state=state)
     """ 
     def __init__(self, client, prompt_template=None, tools=None):
         self.client = client
@@ -105,7 +122,8 @@ class LLMRequester:
 
         return effective_messages + clean_message(msg), state
     
-# --------------------------------------------------------------------------------------------------------------
+
+# ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 # smoke test - function call
 #
 

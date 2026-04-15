@@ -1,8 +1,12 @@
-"""
-    This module contains the SafeFormat class which is a helper class to allow for
-    the use of format_map with missing keys.
-"""
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
 
+"""
+    Helper class for safe string formatting with format_map that handles missing keys gracefully.
+    Returns formatted placeholder instead of raising KeyError for undefined variables.
+"""
 
 class SafeFormat(dict):
     """This is a helper class to allow for the use of format_map with missing keys

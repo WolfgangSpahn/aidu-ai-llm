@@ -1,3 +1,13 @@
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
+
+"""
+    Tool registry for mapping and executing LLM function calls to Python methods.
+    Handles function discovery, signature normalization, and safe execution.
+"""
+
 import inspect
 import json
 import logging
