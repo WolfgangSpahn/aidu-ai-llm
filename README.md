@@ -23,6 +23,8 @@ The following tools are required to build and run the project:
 
 ## Quick Start
 
+Copy .env_example to .env and add your OpenAI Token there.
+
 When you have ensured the prerequisites, this should work
 
 ```bash
