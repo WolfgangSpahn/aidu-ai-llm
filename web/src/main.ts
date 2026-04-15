@@ -1,8 +1,10 @@
 /*
  * Copyright (c) 2026 Wolfgang Spahn, PHBern
- * Licensed under the MIT License.
- * See ../HELP.md#license for the full text.
+ * Licensed under the MIT License.  
+ * Please follow standard academic practice when using this software in research or publications.
+ * See ../LICENSE for the full text.
  *
+
  * Description:
  * This file implements a simple browser chatbot UI. It stores chat history
  * and session id in localStorage, renders user/assistant messages, creates

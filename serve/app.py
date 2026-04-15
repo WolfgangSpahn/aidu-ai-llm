@@ -1,16 +1,19 @@
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
+
 """
-web/app.py
+    Small FastAPI server exposing a stateful chat interface.
+    Mirrors run_smoke_test_chat: one system prompt, per-session message history,
+    single POST endpoint for user turns.
 
-Small FastAPI server exposing a stateful chat interface.
-Mirrors run_smoke_test_chat: one system prompt, per-session message history,
-single POST endpoint for user turns.
+    Run:
+         uv run python -m serve.app
+         # or
+         uvicorn serve.app:app --reload
 
-Run:
-    uv run python -m serve.app
-    # or
-    uvicorn serve.app:app --reload
-
-OpenAPI docs available at http://localhost:8000/docs
+     OpenAPI docs available at http://localhost:8000/docs
 """
 
 import logging

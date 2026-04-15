@@ -1,10 +1,6 @@
-# Help
+MIT License with Scientific Research Attribution Requirement
 
-## License
-
-The frontend code is licensed under the MIT License.
-
-Copyright (c) 2026 Wolfgang Spahn PHBern
+Copyright (c) 2026 Wolfgang Spahn, PHBern
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,3 +19,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+If you use this software in academic or scientific work, we kindly ask that you 
+cite it in accordance with standard academic practice and principles of academic 
+integrity. This includes, but is not limited to, citing the software in any publications,
+papers, presentations, or public reports that result from research using this software. 
+A simple citation such as "This research utilized the aidu-ai-llm software developed at PHBern" 
+or a proper reference to the project repository is sufficient to fulfill this requirement.

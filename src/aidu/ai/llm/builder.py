@@ -1,3 +1,13 @@
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See ../LICENSE for the full text.
+
+"""
+    Prompt builder for constructing and managing LLM prompts with parameter substitution.
+    Handles placeholder replacement and template validation.
+"""
+
 import re
 from .safeformat import SafeFormat
 import logging

@@ -1,4 +1,12 @@
-# aidu_ai_base/llm/correctness_agent.py
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
+
+"""
+    Evaluation agent extending LLMRequester for correctness estimation and evaluation tasks.
+    Specializes in analyzing and scoring LLM outputs against given criteria.
+"""
 
 import json
 import logging

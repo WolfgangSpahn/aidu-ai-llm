@@ -1,3 +1,17 @@
+# Copyright (c) 2026 Wolfgang Spahn, PHBern
+# Licensed under the MIT License.
+# Please follow standard academic practice when using this software in research or publications.
+# See LICENSE for the full text.
+
+"""
+    OpenAI client wrapper providing utilities for interacting with OpenAI's API.
+
+    This module includes:
+    - LLMClient: Wrapper around OpenAI's API for chat completions
+    - clean_message: Utility function for recursive cleaning of message objects
+    - JSON handling helpers for robust API interaction
+"""
+
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
@@ -72,6 +86,7 @@ class LLMClient:
         return msg
     
 # --------------------------------------------------------------------------------------------------------------
+# smoke test - basic chat
 
 def run_smoke_test_function_call():
     load_dotenv()
