@@ -8,17 +8,21 @@ APP=app/
 
 .PHONY: help install clean wipe serve run smoke test curl web.build
 
-help:    ## Show this help
+help:                                     ## Show this help
 	@grep -h "##" $(MAKEFILE_LIST) | grep -v grep | sed -e "s/\$$//" -e "s/##//"
 
-install: ## Install dependencies and set up environment
+# install targets
+
+install:                                  ## Install python dependencies and set up environment
 	@echo "Installing dependencies"
 	@$(UV) sync
 
 	@echo "Upgrading pip"
 	@$(UV) run python -m ensurepip --upgrade
 
-clean:  ## Clean temporary and cache files
+# Cleanup targets
+
+clean:                                    ## Clean temporary and cache files
 	rm -rf .pytest_cache
 	rm -rf .coverage
 	rm -rf htmlcov
@@ -27,38 +31,47 @@ clean:  ## Clean temporary and cache files
 	$(FIND) . -type f -name '*.pyc' -delete
 	$(FIND) . -type d -name '__pycache__' -delete
 
-wipe:   ## Delete all uv-related files for a fresh start
+wipe:                                     ## Delete all uv-related files for a fresh start
 wipe: clean
 	@echo "Removing uv.lock"
 	rm -f uv.lock
 
-serve:	## Run the web server for the application
+
+# Application targets
+
+serve:	                                  ## Run the web server for the application
 	$(UV) run python -m serve.app
 
-run:    ## Run the analysis application (default)
-	$(UV) run python -m $(SRC).main
+run:                                      ## Run the analysis application (default)
+	@echo "Running the application"
+	@echo "no main yet"
 
-smoke:  ## Run a quick smoke on each src file
-	@echo "smoke test"
+# Smoke test targets
 
-	@echo "smoke test for client. Press Enter to continue..."
-	@read dummy
-
+smoke.client:                             ## Run a quick smoke test for the client
 	$(UV) run python -m $(SRC).client
 
-	@echo "smoke test for request. Press Enter to continue..."
-	@read dummy
-
+smoke.requester:                           ## Run a quick smoke test for the requester
 	$(UV) run python -m $(SRC).requester
 
+smoke.actor:                               ## Run a quick smoke test for the actor
+	$(UV) run python -m $(SRC).actor
+
+# Testing targets
 	
-test:   ## Run all tests
+test:                                     ## Run all tests
 	@echo "Running tests..."
 	$(UV) run pytest
 
-curl:	## Runs curl tests against the server
+curl:	                                  ## Runs curl tests against the server
 	@echo "Running curl tests..."
 	test/curl_tests.sh
 
-web.build:	## Build the web frontend
-	cd web && $(Make) build
+# Web frontend targets
+
+web.clean:                                ## Clean up the web frontend
+	cd web && $(MAKE) clean
+web.install:	                          ## Install web frontend dependencies
+	cd web && $(MAKE) install
+web.build:                                ## Build the web frontend
+	cd web && $(MAKE) build
