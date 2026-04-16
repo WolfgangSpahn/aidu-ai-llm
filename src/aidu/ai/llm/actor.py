@@ -16,6 +16,9 @@ import re
 from typing import get_origin, get_args
 
 from pydantic import BaseModel
+from sympy import symbols, solve, diff, sympify
+from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
+
 
 from .requester import LLMRequester
 
@@ -162,11 +165,10 @@ class LLMActor(LLMRequester):
             tools = self.schema()
         super().__init__(client, prompt_template=prompt_template, tools=tools)
         
-        # Auto-register all fc_* methods
-        for fname in self.fnames():
-            fc_method_name = f"fc_{fname}"
-            if hasattr(self, fc_method_name):
-                self.register(fname, getattr(self, fc_method_name))
+        # Auto-register all fc_* methods with their full function name
+        for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
+            if name.startswith("fc_"):
+                self.register(name, func)
 
     def interactive_chat(self, model, initial_messages, state, 
                         on_display_header, on_get_user_input, 
@@ -205,10 +207,14 @@ class LLMActor(LLMRequester):
             msg, state = self.run(messages=messages, model=model, state=state)
             logger.warning(f"LLM response: {msg}, updated state: {state}")
             
-            # Display response: text content, tool call, or state
+            # Display response: text content, tool call message, or state
             if msg.get("content"):
                 on_display_response(msg.get("content"))
+            elif msg.get("_fc_message"):
+                # Display the actual function call result message
+                on_display_response(msg.get("_fc_message"))
             elif msg.get("function_call"):
+                # Fallback: display notification if no message was returned
                 fc = msg.get("function_call")
                 on_display_response(f'  Calling {fc["name"]} with: {fc["arguments"]}')
             else:
@@ -221,6 +227,66 @@ class LLMActor(LLMRequester):
         on_session_end()
         
         return messages, state
+
+
+# ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+# Utility function for solving math problems
+#
+
+def solve_math_problem_with_sympy(problem: str) -> str:
+    """
+    Solves a mathematical problem using SymPy.
+    
+    Supports multiple syntaxes:
+    - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
+    - "solve(expr,x)" to solve for x in an expression (e.g., "solve(2x + 3, x)")
+    - "2x + 3 = 7" for equations
+    - "7x^2 + 3x - 5" for expression evaluation
+    
+    Args:
+        problem (str): The math problem string
+        
+    Returns:
+        str: The solution result
+        
+    Raises:
+        ValueError: If the syntax is invalid
+    """
+    x = symbols('x')  # Default variable
+    
+    if problem.startswith('diff('):
+        match = re.match(r'diff\((.+),\s*(\w+)\)', problem)
+        if match:
+            expr_str, var_name = match.groups()
+            var = symbols(var_name)
+            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            result = diff(expr, var)
+            solution = f"diff({expr_str}, {var_name}) = {result}"
+        else:
+            raise ValueError("Invalid diff syntax. Use: diff(expression, variable)")
+    elif problem.startswith('solve('):
+        # Try to parse as a solve command (e.g., "solve(expr, x)")
+        match = re.match(r'solve\((.+),\s*(\w+)\)', problem)
+        if match:
+            expr_str, var_name = match.groups()
+            var = symbols(var_name)
+            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
+            solutions = solve(expr, var)
+            solution = f"Solutions for {var_name} in {expr_str}: {solutions}"
+        else:
+            raise ValueError("Invalid solve syntax. Use: solve(expression, variable)")
+    # Try to parse as an equation to solve
+    elif '=' in problem:
+        lhs, rhs = problem.split('=')
+        expr = parse_expr(lhs.strip()) - parse_expr(rhs.strip())
+        solutions = solve(expr, x)
+        solution = f"Solutions to {problem}: {solutions}"
+    else:
+        # Try to evaluate the expression
+        expr = parse_expr(problem, transformations=(standard_transformations + (implicit_multiplication_application,)))
+        solution = f"{problem} = {expr}"
+    
+    return solution
 
 
 # ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -239,16 +305,28 @@ class StudentInfo(BaseModel):
 class MathTutor(LLMActor):
     """A math tutor agent with function calls."""
 
-    def fc_solve_equation(self, state, equation: str, steps: int):
+    def fc_solve_math_problem(self, state, problem: str):
         """
-        Solve a mathematical equation step by step.
+        Solves a mathematical problem using SymPy.
 
         Args:
-            equation (str): The equation to solve (e.g., "2x + 3 = 7").
-            steps (int): Number of steps to display.
+            problem (str): The math problem to solve (e.g., "2x + 3 = 7"). Use sympy syntax for more complex problems, such as:
+            - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
+            - "solve(expr,x )" to solve for x in an expression (e.g., "solve(2x + 3 = 7, x)")
+            
+        Returns:
+            tuple: (message, state) where message describes the solution for context
         """
-        state["solution"] = f"Solved {equation} in {steps} steps"
-        return state
+        try:
+            solution = solve_math_problem_with_sympy(problem)
+            state["solution"] = solution
+            message = f"Solved: {solution}"
+        except Exception as e:
+            state["solution"] = f"Error solving equation: {str(e)}"
+            message = f"Error solving equation: {str(e)}"
+        
+        logger.warning(f"State updated in fc_solve_math_problem: {state}")
+        return message, state
 
     def fc_student_completed(self, state, student: StudentInfo):
         """
@@ -256,9 +334,14 @@ class MathTutor(LLMActor):
 
         Args:
             student (StudentInfo): The student who completed the exercise.
+            
+        Returns:
+            tuple: (message, state) where message describes the completion for context
         """
         state["completed_by"] = student.name
-        return state
+        message = f"Student {student.name} (age {student.age}) has completed the exercise."
+        logger.warning(f"State updated in fc_student_completed: {state}")
+        return message, state
 
 def run_smoke_test_actor(console):
     """
@@ -297,7 +380,7 @@ def run_smoke_test_actor(console):
     
     assert len(schemas) == 2, f"Expected 2 schemas, got {len(schemas)}"
     assert schemas[0]["type"] == "function"
-    assert schemas[0]["function"]["name"] in ["fc_solve_equation", "fc_student_completed"]
+    assert schemas[0]["function"]["name"] in ["fc_solve_math_problem", "fc_student_completed"]
     assert "parameters" in schemas[0]["function"]
     console.print("✅ Schema generation verified\n")
 

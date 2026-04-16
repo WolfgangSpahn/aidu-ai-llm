@@ -89,6 +89,9 @@ class LLMRequester:
         - model: LLM model name (e.g. "gpt-4o-mini")
         - state: dict representing current state (can be modified by tools)
         - run_params: optional dict for dynamic prompt updates (e.g. {"subject": "math", "problem": "2 + 3"})
+        
+        Function calls can return either state or (message, state) tuple.
+        Returned msg dict will contain _fc_message key if a function was called.
         """
         if run_params:
             messages = self.update_system_prompt(messages, prompt_params=run_params)
@@ -100,7 +103,17 @@ class LLMRequester:
             args = json.loads(fc["arguments"])
 
             if fn:
-                state = fn(state=state, **args)
+                result = fn(state=state, **args)
+                # Handle functions returning (message, state) or just state
+                if isinstance(result, tuple) and len(result) == 2:
+                    fc_message, state = result
+                    # Store the function call message for the caller
+                    msg["_fc_message"] = fc_message
+                    # Append function call message to context
+                    if fc_message:
+                        messages.append({"role": "assistant", "content": fc_message})
+                else:
+                    state = result
 
         return msg, state
     

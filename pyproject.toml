@@ -12,6 +12,7 @@ dependencies = [
     "openai>=1.0.0,<2.0.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
+    "sympy>=1.11.0,<2.0.0",
 ]
 
 # Optional dependencies for development and testing
