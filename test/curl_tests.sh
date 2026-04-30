@@ -47,6 +47,27 @@ fi
 
 echo "PASS: chat reply received"
 
+# 2b) Test evaluation endpoint
+eval_status="$(curl -sS -o /tmp/eval_resp.json -w '%{http_code}' \
+  -X POST "${BASE_URL}/sessions/${session_id}/evaluate" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"I think the derivative is 6x","context":"Can you find the derivative of 3x^2?","correct_answer":"The derivative of 3x^2 is 6x"}')"
+
+if [[ "$eval_status" != "200" ]]; then
+  echo "FAIL: evaluate endpoint returned status ${eval_status}" >&2
+  cat /tmp/eval_resp.json >&2
+  exit 1
+fi
+
+distribution="$(python -c 'import json,sys; d=json.load(open("/tmp/eval_resp.json")).get("distribution",[]); print(len(d))')"
+if [[ "$distribution" -ne 5 ]]; then
+  echo "FAIL: expected 5-element distribution, got ${distribution}" >&2
+  cat /tmp/eval_resp.json >&2
+  exit 1
+fi
+
+echo "PASS: evaluate endpoint returned 5-element distribution"
+
 # 3) Get history and verify it contains system + user + assistant
 history_status="$(curl -sS -o /tmp/history_resp.json -w '%{http_code}' \
   "${BASE_URL}/sessions/${session_id}/history")"

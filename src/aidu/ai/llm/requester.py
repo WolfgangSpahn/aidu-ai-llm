@@ -32,6 +32,12 @@ class LLMRequester:
       It provides methods to build system prompts, update them dynamically, and run the agent with given messages and state.
       It also supports function calls from the LLM response to modify the state.
 
+      Prompt handling pattern:
+        - Define prompt_template as a class variable (optional)
+        - Override during __init__ with prompt_template parameter
+        - Use prompt_args to pass parameters to the template
+        - Use set_system_prompt() to replace the system prompt entirely
+
       Example usage:
             client = LLMClient(api_key)
             prompt = "You are a {subject} tutor. Problem: {problem}"
@@ -43,59 +49,123 @@ class LLMRequester:
             user_messages = [{"role": "user", "content": "What is 2 + 3? Use the tool."}]
             state = {}
             msg, state = agent.run(system_messages + user_messages, model="gpt-4o-mini", state=state)
-    """ 
-    def __init__(self, client, prompt_template=None, tools=None):
+    """
+    # Class-level template (optional - can be overridden in subclasses)
+    prompt_template = None
+    system_prompt = None  # Direct system prompt (non-templated, for simple cases)
+    
+    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
+        """
+        Initialize LLMRequester.
+        
+        Args:
+            client: LLM client instance
+            prompt_template: Override the class-level prompt_template (can be string or file path)
+            prompt_args: Dict of arguments to pass to the prompt template via .format()
+            tools: List of OpenAI tool definitions (auto-generated in LLMActor if None)
+        """
         self.client = client
         self.tools = tools or []
         self.function_lookup = {}
-        # load prompt from yaml if prompt_template is a path, else use it as a string
-        if prompt_template and os.path.isfile(prompt_template):
-            with open(prompt_template, "r") as f:
-                prompt_template = f.read()
+        self.prompt_args = prompt_args or {}
+        self._system_prompt_override = None  # Direct system prompt override (used by set_system_prompt)
+        
+        # Determine which template to use: parameter overrides class variable
+        template_to_use = prompt_template if prompt_template is not None else self.prompt_template
+        
+        # If no template, check for class-level system_prompt (direct, non-templated)
+        if not template_to_use and self.system_prompt is not None:
+            self._system_prompt_override = self.system_prompt
+            self.prompt_builder = None
+            return
+        
+        # load prompt from yaml if template is a path, else use it as a string
+        if template_to_use and os.path.isfile(template_to_use):
+            with open(template_to_use, "r") as f:
+                template_to_use = f.read()
+        
+        # Create prompt builder if we have a template
         self.prompt_builder = (
-            PromptBuilder(prompt_template) if prompt_template else None
+            PromptBuilder(template_to_use) if template_to_use else None
         )
 
     def register(self, name, fn):
         self.function_lookup[name] = fn
 
+    def set_system_prompt(self, prompt_text):
+        """
+        Directly set a system prompt, overriding any template.
+        This is useful when you want to use a pre-built prompt string instead of a template.
+        """
+        self._system_prompt_override = prompt_text
+
     def build_system_prompt(self, prompt_params=None):
         """
         Build system message once (compile step).
+        - If set_system_prompt() was called, use that override (with SafeFormat applied)
+        - Otherwise, use prompt_builder with prompt_params
+        - prompt_params are merged with self.prompt_args, with params taking precedence
         Returns a prepared message list.
         """
+        # Use direct override if set, formatted with SafeFormat for flexible placeholders
+        if self._system_prompt_override is not None:
+            merged_params = {**self.prompt_args, **(prompt_params or {})}
+            formatted_prompt = self._system_prompt_override.format_map(SafeFormat(**merged_params)) if merged_params else self._system_prompt_override
+            return [{"role": "system", "content": formatted_prompt}]
+        
         if not self.prompt_builder:
             return []
 
-        system_prompt = self.prompt_builder.build(prompt_params=prompt_params)
+        # Merge prompt_args with provided params (params override stored args)
+        merged_params = {**self.prompt_args, **(prompt_params or {})}
+        system_prompt = self.prompt_builder.build(prompt_params=merged_params if merged_params else None)
         return [{"role": "system", "content": system_prompt}]
 
     def update_system_prompt(self, messages, prompt_params=None):
         """
-        Update system message with new params (e.g. subject).
+        Update system message in an existing message list.
+        - If set_system_prompt() was called, use that override (with SafeFormat applied)
+        - Otherwise, rebuild using prompt_builder with new params
         Returns updated message list.
         """
-        if not self.prompt_builder or not messages or messages[0]["role"] != "system":
+        if not messages or messages[0]["role"] != "system":
+            # No system message to update, return as-is
             return messages
 
-        system_prompt = self.prompt_builder.build(prompt_params=prompt_params)
+        # Use direct override if set, formatted with SafeFormat for flexible placeholders
+        if self._system_prompt_override is not None:
+            merged_params = {**self.prompt_args, **(prompt_params or {})}
+            formatted_prompt = self._system_prompt_override.format_map(SafeFormat(**merged_params)) if merged_params else self._system_prompt_override
+            system_message = {"role": "system", "content": formatted_prompt}
+            return [system_message] + messages[1:]
+        
+        if not self.prompt_builder:
+            return messages
+
+        # Merge prompt_args with provided params (params override stored args)
+        merged_params = {**self.prompt_args, **(prompt_params or {})}
+        system_prompt = self.prompt_builder.build(prompt_params=merged_params if merged_params else None)
         system_message = {"role": "system", "content": system_prompt}
         return [system_message] + messages[1:]
 
-    def run(self, messages, model, state, run_params=None):
+    def run(self, messages, model, state, run_params=None, enforce_json=False):
         """
         Run the agent with given messages, model, and state.
         - messages: list of message dicts (role/content)
         - model: LLM model name (e.g. "gpt-4o-mini")
         - state: dict representing current state (can be modified by tools)
         - run_params: optional dict for dynamic prompt updates (e.g. {"subject": "math", "problem": "2 + 3"})
+        - enforce_json: if True, force OpenAI to return JSON response format
         
         Function calls can return either state or (message, state) tuple.
         Returned msg dict will contain _fc_message key if a function was called.
         """
         if run_params:
             messages = self.update_system_prompt(messages, prompt_params=run_params)
-        msg = self.client.chat(model, messages, tools=self.tools)
+        
+        # Build response_format based on enforce_json flag
+        response_format = {"type": "json_object"} if enforce_json else None
+        msg = self.client.chat(model, messages, tools=self.tools, response_format=response_format)
 
         fc = msg.get("function_call")
         if fc:
