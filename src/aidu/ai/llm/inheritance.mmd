@@ -1,0 +1,67 @@
+---
+title: AIDU LLM Class Inheritance Structure
+---
+classDiagram
+    class LLMClient {
+        -client: OpenAI
+        +__init__(api_key)
+        +chat(model, messages, tools, response_format)
+    }
+
+    class PromptBuilder {
+        -template: str
+        +__init__(template)
+        +build(prompt_params) str
+        +extract_placeholders() list
+    }
+
+    class SafeFormat {
+        +format_map(mapping)
+    }
+
+    class ToolRegistry {
+        -_tools: dict
+        +__init__()
+        +register_from_instance(instance)
+        +execute(function_call, state)
+        -_wrap(method)
+    }
+
+    class ToolSpec {
+        +get_tools() list
+        +call_tool(name, arguments, state)
+    }
+
+    class LLMRequester {
+        -client: LLMClient
+        -prompt_builder: PromptBuilder
+        -tools: list
+        -function_lookup: dict
+        +__init__(client, prompt_template, tools)
+        +register(name, fn)
+        +build_system_prompt(prompt_params) list
+        +update_system_prompt(messages, prompt_params) list
+        +run(messages, model, state, run_params) tuple
+        +talk(messages, model, state, run_params) tuple
+    }
+
+    class EvaluationAgent {
+        +__init__(client, prompt_template, tools)
+        +evaluate(user_input) float
+    }
+
+    class LLMActor {
+        +__init__(client, prompt_template, tools)
+        +fc_*() methods for automatic schema generation
+    }
+
+    %% Relationships
+    LLMRequester --> LLMClient : uses
+    LLMRequester --> PromptBuilder : uses
+    LLMRequester --> ToolRegistry : manages tools via
+    PromptBuilder --> SafeFormat : uses
+    
+    EvaluationAgent --|> LLMRequester : extends
+    LLMActor --|> LLMRequester : extends
+    
+    ToolSpec --|> ToolRegistry : implements

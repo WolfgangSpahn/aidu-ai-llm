@@ -16,8 +16,6 @@ import re
 from typing import get_origin, get_args
 
 from pydantic import BaseModel
-from sympy import symbols, solve, diff, sympify
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
 
 
 from .requester import LLMRequester
@@ -117,22 +115,50 @@ class LLMActor(LLMRequester):
     Methods prefixed with 'fc_' are automatically discovered and converted to OpenAI function schemas.
     Supports Google-style docstrings for parameter descriptions and Pydantic models for complex types.
     
+    Prompting pattern (inherited from LLMRequester):
+    - Define class-level system_prompt for fixed prompts:
+      class MyTutor(LLMActor):
+          system_prompt = "You are a math tutor."
+    
+    - Or define class-level prompt_template for templated prompts with {placeholders}:
+      class MyTutor(LLMActor):
+          prompt_template = "You are a {subject} tutor."
+    
+    - Use prompt_args in __init__ to fill placeholders (supports SafeFormat):
+      tutor = MyTutor(client, prompt_args={"subject": "math"})
+      # Unfilled placeholders remain as {placeholder} for later customization
+    
+    - Dynamically override system prompt:
+      tutor.set_system_prompt("New system prompt")
+    
+    - Override template at instantiation:
+      tutor = MyTutor(client, prompt_template="Override template", prompt_args={...})
+    
     Example usage:
-        class MyAgent(LLMActor):
-            def fc_my_function(self, state, param1: str, param2: int):
+        class MyTutor(LLMActor):
+            system_prompt = "You are a {subject} tutor{level}."
+            
+            def fc_solve_problem(self, state, problem: str):
                 '''
-                Performs an operation.
+                Solves a problem.
                 
                 Args:
-                    param1 (str): First parameter description.
-                    param2 (int): Second parameter description.
+                    problem (str): The problem to solve
                 '''
-                state['result'] = param1 + str(param2)
-                return state
+                state['result'] = f"Solution to {problem}"
+                return "Solved!", state
         
-        agent = MyAgent(client, prompt_template=prompt)
-        tools = agent.schema()
-        function_names = agent.fnames()
+        # Use with class-level prompt
+        tutor = MyTutor(client)
+        # Prompt: "You are a {subject} tutor{level}." (placeholders remain)
+        
+        # Fill some placeholders
+        tutor2 = MyTutor(client, prompt_args={"subject": "math"})
+        # Prompt: "You are a math tutor{level}." (subject filled, level unfilled)
+        
+        # Use function calls and schema
+        tools = tutor.schema()  # Auto-generated from fc_* methods
+        fnames = tutor.fnames()  # ["solve_problem"]
     """
 
     @classmethod
@@ -159,11 +185,16 @@ class LLMActor(LLMRequester):
             if name.startswith(prefix)
         ]
     
-    def __init__(self, client, prompt_template=None, tools=None):
-        """Initialize LLMActor. If tools is None, automatically generates from schema."""
+    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
+        """
+        Initialize LLMActor with optional template and argument overrides.
+        - If tools is None, automatically generates from schema
+        - Inherits prompt_template from class variable if not overridden
+        - Supports prompt_args to parameterize the template
+        """
         if tools is None:
             tools = self.schema()
-        super().__init__(client, prompt_template=prompt_template, tools=tools)
+        super().__init__(client, prompt_template=prompt_template, prompt_args=prompt_args, tools=tools)
         
         # Auto-register all fc_* methods with their full function name
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
@@ -230,118 +261,8 @@ class LLMActor(LLMRequester):
 
 
 # ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-# Utility function for solving math problems
-#
-
-def solve_math_problem_with_sympy(problem: str) -> str:
-    """
-    Solves a mathematical problem using SymPy.
-    
-    Supports multiple syntaxes:
-    - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
-    - "solve(expr,x)" to solve for x in an expression (e.g., "solve(2x + 3, x)")
-    - "2x + 3 = 7" for equations
-    - "7x^2 + 3x - 5" for expression evaluation
-    
-    Args:
-        problem (str): The math problem string
-        
-    Returns:
-        str: The solution result
-        
-    Raises:
-        ValueError: If the syntax is invalid
-    """
-    x = symbols('x')  # Default variable
-    
-    if problem.startswith('diff('):
-        match = re.match(r'diff\((.+),\s*(\w+)\)', problem)
-        if match:
-            expr_str, var_name = match.groups()
-            var = symbols(var_name)
-            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
-            result = diff(expr, var)
-            solution = f"diff({expr_str}, {var_name}) = {result}"
-        else:
-            raise ValueError("Invalid diff syntax. Use: diff(expression, variable)")
-    elif problem.startswith('solve('):
-        # Try to parse as a solve command (e.g., "solve(expr, x)")
-        match = re.match(r'solve\((.+),\s*(\w+)\)', problem)
-        if match:
-            expr_str, var_name = match.groups()
-            var = symbols(var_name)
-            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
-            solutions = solve(expr, var)
-            solution = f"Solutions for {var_name} in {expr_str}: {solutions}"
-        else:
-            raise ValueError("Invalid solve syntax. Use: solve(expression, variable)")
-    # Try to parse as an equation to solve
-    elif '=' in problem:
-        lhs, rhs = problem.split('=')
-        expr = parse_expr(lhs.strip()) - parse_expr(rhs.strip())
-        solutions = solve(expr, x)
-        solution = f"Solutions to {problem}: {solutions}"
-    else:
-        # Try to evaluate the expression
-        expr = parse_expr(problem, transformations=(standard_transformations + (implicit_multiplication_application,)))
-        solution = f"{problem} = {expr}"
-    
-    return solution
-
-
-# ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 # smoke test - LLMActor with automatic schema generation
 #
-
-# Define a simple Pydantic model for structured data
-from pydantic import BaseModel, Field
-
-class StudentInfo(BaseModel):
-    """Student information."""
-    name: str = Field(..., description="Student's full name")
-    age: int = Field(..., description="Student's age")
-
-# Create a custom actor with function calls
-class MathTutor(LLMActor):
-    """A math tutor agent with function calls."""
-
-    def fc_solve_math_problem(self, state, problem: str):
-        """
-        Solves a mathematical problem using SymPy.
-
-        Args:
-            problem (str): The math problem to solve (e.g., "2x + 3 = 7"). Use sympy syntax for more complex problems, such as:
-            - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
-            - "solve(expr,x )" to solve for x in an expression (e.g., "solve(2x + 3 = 7, x)")
-            
-        Returns:
-            tuple: (message, state) where message describes the solution for context
-        """
-        try:
-            solution = solve_math_problem_with_sympy(problem)
-            state["solution"] = solution
-            message = f"Solved: {solution}"
-        except Exception as e:
-            state["solution"] = f"Error solving equation: {str(e)}"
-            message = f"Error solving equation: {str(e)}"
-        
-        logger.warning(f"State updated in fc_solve_math_problem: {state}")
-        return message, state
-
-    def fc_student_completed(self, state, student: StudentInfo):
-        """
-        Mark that a student has completed an exercise.
-
-        Args:
-            student (StudentInfo): The student who completed the exercise.
-            
-        Returns:
-            tuple: (message, state) where message describes the completion for context
-        """
-        state["completed_by"] = student.name
-        message = f"Student {student.name} (age {student.age}) has completed the exercise."
-        logger.warning(f"State updated in fc_student_completed: {state}")
-        return message, state
 
 def run_smoke_test_actor(console):
     """
@@ -351,10 +272,10 @@ def run_smoke_test_actor(console):
     from dotenv import load_dotenv
     import os
     from .client import LLMClient
+    from .actors import MathTutor
     from rich.console import Console
     from rich.rule import Rule
     from rich.markdown import Markdown
-    import textwrap
     
 
     load_dotenv()
@@ -363,9 +284,10 @@ def run_smoke_test_actor(console):
 
     # -----------------------------------------------------------------------------------------------------
     # Initialize the tutor
+    # The system_prompt is automatically used from the MathTutor class definition
 
     client = LLMClient(api_key)
-    tutor = MathTutor(client, prompt_template="You are a helpful math tutor.")
+    tutor = MathTutor(client)  # Uses MathTutor.system_prompt automatically
 
     # -----------------------------------------------------------------------------------------------------
     # Display schema generation test
@@ -412,17 +334,10 @@ def run_smoke_test_actor(console):
     def on_end():
         console.print("\n[green]✓ Session Complete[/]")
 
-    # Run interactive chat
-    system_prompt = textwrap.dedent("""\
-                                    You are a helpful math tutor. Format your responses using markdown with:
-                                    - Headers for sections
-                                    - **Bold** for important terms
-                                    - Lists for steps
-                                    - Code blocks for equations when needed""")
-    
+    # Run interactive chat using the system prompt defined in MathTutor class
     messages, state = tutor.interactive_chat(
         model="gpt-4o-mini",
-        initial_messages=[{"role": "system", "content": system_prompt}],
+        initial_messages=[{"role": "system", "content": MathTutor.system_prompt}],
         state={},
         on_display_header=header,
         on_get_user_input=get_input,
