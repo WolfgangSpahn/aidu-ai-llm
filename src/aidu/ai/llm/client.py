@@ -4,18 +4,18 @@
 # See LICENSE for the full text.
 
 """
-    OpenAI client wrapper providing utilities for interacting with OpenAI's API.
+    Base client interface and shared context models.
 
     This module includes:
-    - LLMClient: Wrapper around OpenAI's API for chat completions
-    - clean_message: Utility function for recursive cleaning of message objects
-    - JSON handling helpers for robust API interaction
+    - Client: Abstract base class for chat-capable clients
+    - Context / Trace / State / Control: Typed runtime context models
+    - clean_message: Utility for recursive cleaning of message objects
 """
 
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
-import json
+from abc import ABC, abstractmethod
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 def clean_message(obj):
     """
@@ -48,74 +48,63 @@ def clean_message(obj):
         return [v for v in cleaned if v not in ({}, [])]
 
     return obj
-class LLMClient:
-    def __init__(self, api_key):
-        self.client = OpenAI(api_key=api_key)
 
-    def chat(
-        self,
-        model,
-        messages,
-        tools=None,
-        response_format=None,
-    ):
-        kwargs = {
-            "model": model,
-            "messages": messages,
-        }
 
-        if tools:
-            kwargs["tools"] = tools
+# define Message type as dict for now, can be extended to a Pydantic model if needed
+Message = dict[str, Any]
 
-        if response_format:
-            kwargs["response_format"] = response_format
+class Trace(BaseModel):
+    """Trace of messages exchanged so far in the conversation."""
 
-        response = self.client.chat.completions.create(**kwargs)
-
-        msg = response.choices[0].message.model_dump()
-        
-        # --- normalize tool call ---
-        if "tool_calls" in msg and msg["tool_calls"]:
-            tool = msg["tool_calls"][0]
-            msg["function_call"] = {
-                "name": tool["function"]["name"],
-                "arguments": tool["function"]["arguments"],
-            }
-
-        msg = clean_message(msg)
-        return msg
-    
-# --------------------------------------------------------------------------------------------------------------
-# smoke test - basic chat
-
-def run_smoke_test_function_call():
-    load_dotenv()
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    assert api_key, "Missing OPENAI_API_KEY in .env"
-
-    client = LLMClient(api_key)
-
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Say hello in one short sentence."}
-    ]
-
-    msg = client.chat(
-        model="gpt-4o-mini",
-        messages=messages
+    messages: list[Message] = Field(
+        default_factory=list,
+        description="List of messages exchanged in the conversation so far.",
     )
 
-    print("\n--- Smoke Test Result ---")
-    print(json.dumps(msg, indent=2))
+class State(BaseModel):
+    """Mutable state that can be updated and shared across turns."""
 
-    # --- basic checks ---
-    assert "role" in msg
-    assert msg["role"] == "assistant"
-    assert "content" in msg
+    data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Key-value pairs representing mutable state for the conversation.",
+    )
 
-    print("\n✅ Smoke test passed!")
+class Control(BaseModel):
+    """Control information for execution and flow decisions."""
 
+    data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Key-value pairs representing control information for execution and flow decisions.",
+    )
 
-if __name__ == "__main__":
-    run_smoke_test_function_call()
+class Context(BaseModel):
+    """Typed runtime context carrying history, mutable state, and control data."""
+
+    trace: Trace = Field(
+        default_factory=Trace,
+        description="Former messages in the conversation.",
+    )
+    state: State = Field(
+        default_factory=State,
+        description="Mutable application state shared across turns.",
+    )
+    control: Control = Field(
+        default_factory=Control,
+        description="Control information for execution and flow decisions.",
+    )
+
+class Client(ABC):
+    """Base interface for chat-capable clients."""
+
+    def __init__(self, model, config):
+        self.model = model
+        self.config = config
+
+    @abstractmethod
+    def chat(
+        self,
+        message: Message,
+        context: Context
+    ):
+        """Run a chat completion and return a normalized message dict."""
+        raise NotImplementedError

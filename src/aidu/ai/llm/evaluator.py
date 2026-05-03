@@ -11,6 +11,7 @@ Provides base Evaluator class and specialized implementations for educational sc
 import json
 import logging
 
+from .client import Context, Trace
 from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
@@ -61,11 +62,14 @@ class Evaluator(LLMRequester):
             eval_params = eval_params or {}
             system_messages = self.build_system_prompt(prompt_params=eval_params)
             
-            # We need to add an explicit user prompt to trigger the evaluation, even if it's empty
-            messages = system_messages + [{"role": "user", "content": user_prompt}]
-            msg, _ = self.run(messages=messages, model="gpt-4o-mini", state={}, enforce_json=enforce_json)
+            # Add an explicit user prompt as the current turn to trigger evaluation
+            context = Context(trace=Trace(messages=system_messages))
+            message, _ = self.chat(
+                message={"role": "user", "content": user_prompt},
+                context=context,
+            )
             
-            response_text = msg.get("content", "")
+            response_text = message.get("content", "")
             result = json.loads(response_text)
             
             distribution = result.get("distribution")

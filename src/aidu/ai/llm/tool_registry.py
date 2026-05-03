@@ -56,11 +56,11 @@ class ToolRegistry:
         signature = inspect.signature(method)
         params = list(signature.parameters.keys())
 
-        if params == ["arguments", "state"]:
-            return lambda args, state: method(args, state)
+        if params == ["arguments", "context"]:
+            return lambda args, context: method(args, context)
 
-        elif "state" in params:
-            return lambda args, state: method(state=state, **args)
+        elif "context" in params:
+            return lambda args, context: method(context=context, **args)
 
         else:
             logger.error(f"Invalid signature for {method.__name__}: {params}")
@@ -70,7 +70,7 @@ class ToolRegistry:
     # Execution
     # ------------------------------------------------------------------
 
-    def execute(self, function_call, state):
+    def execute(self, function_call, context):
         """
         Execute a function call from the LLM.
         """
@@ -79,7 +79,7 @@ class ToolRegistry:
 
         if name not in self._tools:
             logger.error(f"Unknown function: {name}")
-            return state
+            return context
 
         try:
             args = json.loads(function_call.get("arguments", "{}"))
@@ -88,7 +88,7 @@ class ToolRegistry:
             args = {}
 
         try:
-            return self._tools[name](args, state)
+            return self._tools[name](args, context)
         except Exception as e:
             logger.error(f"Error executing {name}: {e}")
-            return state
+            return context

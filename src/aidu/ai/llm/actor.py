@@ -13,11 +13,13 @@ Supports Google-style docstrings for parameter descriptions and Pydantic models 
 import logging
 import inspect
 import re
+import textwrap
 from typing import get_origin, get_args
 
 from pydantic import BaseModel
 
 
+from .client import Context, Trace
 from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,8 @@ def get_openai_function_schema(func, make_all_required=False):
     required_fields = []
 
     for name, param in signature.parameters.items():
-        if name in ["self", "state"]:
-            continue  # Ignore self and state
+        if name in ["self", "context"]:
+            continue  # Ignore self and context
 
         annotation = param.annotation
         description = "No description available"
@@ -128,9 +130,6 @@ class LLMActor(LLMRequester):
       tutor = MyTutor(client, prompt_args={"subject": "math"})
       # Unfilled placeholders remain as {placeholder} for later customization
     
-    - Dynamically override system prompt:
-      tutor.set_system_prompt("New system prompt")
-    
     - Override template at instantiation:
       tutor = MyTutor(client, prompt_template="Override template", prompt_args={...})
     
@@ -138,15 +137,15 @@ class LLMActor(LLMRequester):
         class MyTutor(LLMActor):
             system_prompt = "You are a {subject} tutor{level}."
             
-            def fc_solve_problem(self, state, problem: str):
+            def fc_solve_problem(self, context, problem: str):
                 '''
                 Solves a problem.
                 
                 Args:
                     problem (str): The problem to solve
                 '''
-                state['result'] = f"Solution to {problem}"
-                return "Solved!", state
+                context.state.data['result'] = f"Solution to {problem}"
+                return "Solved!", context
         
         # Use with class-level prompt
         tutor = MyTutor(client)
@@ -191,9 +190,14 @@ class LLMActor(LLMRequester):
         - If tools is None, automatically generates from schema
         - Inherits prompt_template from class variable if not overridden
         - Supports prompt_args to parameterize the template
+        - Automatically sets client.tools so OpenAI API can trigger function calls
         """
         if tools is None:
             tools = self.schema()
+        
+        # Set tools on the client so OpenAI API can trigger function calls
+        client.tools = tools
+        
         super().__init__(client, prompt_template=prompt_template, prompt_args=prompt_args, tools=tools)
         
         # Auto-register all fc_* methods with their full function name
@@ -201,26 +205,58 @@ class LLMActor(LLMRequester):
             if name.startswith("fc_"):
                 self.register(name, func)
 
-    def interactive_chat(self, model, initial_messages, state, 
+    @staticmethod
+    def _clean_message_for_storage(msg: dict) -> dict:
+        """Keep only stable fields suitable for reuse in future chat completions."""
+        cleaned = {}
+        if "role" in msg:
+            cleaned["role"] = msg["role"]
+        if "content" in msg and msg["content"]:
+            cleaned["content"] = msg["content"]
+        if "function_call" in msg and msg["function_call"]:
+            cleaned["function_call"] = msg["function_call"]
+        return cleaned
+
+    def chat_turn(self, context: Context, user_message: dict) -> tuple[str, Context]:
+        """
+        Run a full user turn: call model, resolve reply text, and persist turn in context trace.
+
+        Returns:
+            tuple[str, Context]: (reply_text, updated_context)
+        """
+        message, context = self.chat(message=user_message, context=context)
+
+        reply = message.get("content", "")
+        if not reply and message.get("_fc_message"):
+            reply = message.get("_fc_message")
+        if not reply and message.get("function_call"):
+            fc = message.get("function_call")
+            reply = f"Executing {fc['name']}..."
+
+        context.trace.messages.append(user_message)
+        stored_assistant = self._clean_message_for_storage(message)
+        if not stored_assistant.get("content") and message.get("_fc_message"):
+            stored_assistant["content"] = message.get("_fc_message")
+        context.trace.messages.append(stored_assistant)
+
+        return reply, context
+
+    def interactive_chat(self, context, 
                         on_display_header, on_get_user_input, 
                         on_session_end, on_display_response):
         """
         Run an interactive chat session with I/O handlers.
         
         Args:
-            model (str): LLM model name (e.g., "gpt-4o-mini")
-            initial_messages (list): Initial message list (system prompt, etc.)
-            state (dict): Initial state dict
+            context (Context): Context object with initial trace (system prompt, etc.)
             on_display_header (callable): Handler() to display header
             on_get_user_input (callable): Handler() -> str | None for user input (None exits)
             on_session_end (callable): Handler() when session ends
             on_display_response (callable): Handler(response_text) to display assistant response
         
         Returns:
-            messages, state: Final message history and state
+            context: Final context after session
         """
-        messages = initial_messages
-        
         # Display header
         on_display_header()
         
@@ -233,128 +269,32 @@ class LLMActor(LLMRequester):
             if not user_text:
                 continue
             
-            # Add user message and get response
-            messages.append({"role": "user", "content": user_text})
-            msg, state = self.run(messages=messages, model=model, state=state)
-            logger.warning(f"LLM response: {msg}, updated state: {state}")
+            # Call model with the current user turn
+            user_message = {"role": "user", "content": user_text}
+            message, context = self.chat(user_message, context)
+            logger.warning(f"LLM response: {message}, updated context: {context.state}")
             
-            # Display response: text content, tool call message, or state
-            if msg.get("content"):
-                on_display_response(msg.get("content"))
-            elif msg.get("_fc_message"):
+            # Display response: text content, tool call message, or context
+            if message.get("content"):
+                on_display_response(message.get("content"))
+            elif message.get("_fc_message"):
                 # Display the actual function call result message
-                on_display_response(msg.get("_fc_message"))
-            elif msg.get("function_call"):
+                on_display_response(message.get("_fc_message"))
+            elif message.get("function_call"):
                 # Fallback: display notification if no message was returned
-                fc = msg.get("function_call")
+                fc = message.get("function_call")
                 on_display_response(f'  Calling {fc["name"]} with: {fc["arguments"]}')
             else:
-                on_display_response(f"state updated: {state}")
+                on_display_response(f"context updated: {context.state}")
             
-            # Append response to messages for next turn
-            messages.append({"role": msg.get("role"), "content": msg.get("content", "")})
+            # Append user and response to context trace for next turn
+            context.trace.messages.append(user_message)
+            context.trace.messages.append({"role": message.get("role"), "content": message.get("content", "")})
         
         # Session end
         on_session_end()
         
-        return messages, state
+        return context
 
 
-# ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-# smoke test - LLMActor with automatic schema generation
-#
 
-def run_smoke_test_actor(console):
-    """
-    Smoke test for LLMActor demonstrating schema generation and interactive chat.
-    """
-    import json
-    from dotenv import load_dotenv
-    import os
-    from .client import LLMClient
-    from .actors import MathTutor
-    from rich.console import Console
-    from rich.rule import Rule
-    from rich.markdown import Markdown
-    
-
-    load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY")
-    assert api_key, "Missing OPENAI_API_KEY in .env"
-
-    # -----------------------------------------------------------------------------------------------------
-    # Initialize the tutor
-    # The system_prompt is automatically used from the MathTutor class definition
-
-    client = LLMClient(api_key)
-    tutor = MathTutor(client)  # Uses MathTutor.system_prompt automatically
-
-    # -----------------------------------------------------------------------------------------------------
-    # Display schema generation test
-
-    console.print(Rule("LLMActor Schema Generation Test"))
-
-    schemas = MathTutor.schema()
-    fnames = MathTutor.fnames()
-
-    console.print(f"\nDiscovered functions: {fnames}")
-    console.print(f"Generated schemas: {len(schemas)} function(s)")
-    
-    assert len(schemas) == 2, f"Expected 2 schemas, got {len(schemas)}"
-    assert schemas[0]["type"] == "function"
-    assert schemas[0]["function"]["name"] in ["fc_solve_math_problem", "fc_student_completed"]
-    assert "parameters" in schemas[0]["function"]
-    console.print("✅ Schema generation verified\n")
-
-    # -----------------------------------------------------------------------------------------------------
-    # Interactive chat test
-
-    turn_count = [0]
-
-    def header():
-        console.print(Rule("Math Tutor Chat"))
-
-    def get_input():
-        turn_count[0] += 1
-        if turn_count[0] == 1:
-            text = "What is the derivative of 7x^2 + 3x - 5? Just the result, no explanation yet."
-        elif turn_count[0] == 2:
-            text = "Can you explain how?"
-        else:
-            return None
-        
-        indented = textwrap.indent(text, "  ")
-        console.print(f"[yellow][user>[/]\n{indented}")
-        return text
-
-    def display_response(text):
-        console.print(f"[cyan][tutor>[/]")
-        console.print(Markdown(text))
-
-    def on_end():
-        console.print("\n[green]✓ Session Complete[/]")
-
-    # Run interactive chat using the system prompt defined in MathTutor class
-    messages, state = tutor.interactive_chat(
-        model="gpt-4o-mini",
-        initial_messages=[{"role": "system", "content": MathTutor.system_prompt}],
-        state={},
-        on_display_header=header,
-        on_get_user_input=get_input,
-        on_display_response=display_response,
-        on_session_end=on_end
-    )
-
-    print("\n✅ LLMActor smoke test passed!")
-
-
-if __name__ == "__main__":
-    # setup up rich logging
-    from rich.logging import RichHandler
-    from rich.console import Console
-    console = Console()
-    logging.basicConfig(level=logging.WARNING, format="%(message)s", handlers=[RichHandler(console=console, rich_tracebacks=True)])
-
-    
-
-    run_smoke_test_actor(console)

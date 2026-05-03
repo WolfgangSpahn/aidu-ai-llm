@@ -169,7 +169,8 @@ async function sendMessage(content: string) {
     }
 
     // Send one user message to the backend for this specific session id.
-    const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/chat`, {
+    const ACTOR_ID = "MathTutor";
+    const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/${ACTOR_ID}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

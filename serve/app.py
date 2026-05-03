@@ -18,19 +18,22 @@
 
 import logging
 import uuid
+from pathlib import Path as FsPath
 from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Path
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from rich.logging import RichHandler
 from rich.console import Console
 
-from aidu.ai.llm.client import LLMClient
-from aidu.ai.llm.actors import MathTutor
+from aidu.ai.llm.clients.llm import LLMClient
+from aidu.ai.llm.actors.mathTutor import MathTutor
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
+from aidu.ai.llm.client import Context, Trace, State
 
 load_dotenv()
 
@@ -91,66 +94,60 @@ logger.info("✓ CORS enabled for all origins")
 
 MODEL = "gpt-4o-mini"
 SYSTEM_PROMPT = "You are a helpful assistant."
+DEFAULT_ACTOR = "MathTutor"
+WEB_DIST_DIR = FsPath("web/dist")
+
+# Registry for actor classes. Add new actors here as they are introduced.
+ACTOR_REGISTRY = {
+    "MathTutor": MathTutor,
+}
 
 # ---------------------------------------------------------------------------
 # State  (in-memory; replace with a real store for production)
 # ---------------------------------------------------------------------------
 
-# session_id -> list of message dicts
-_sessions: dict[str, list[dict]] = {}
-# session_id -> actor state dict
-_session_states: dict[str, dict] = {}
+# session_id -> Context object (contains trace + state)
+_sessions: dict[str, Context] = {}
 
 
-def _clean_message_for_storage(msg: dict) -> dict:
+def _get_or_raise(session_id: str) -> Context:
     """
-    Clean message for safe storage in message history.
-    Removes internal fields and ensures no conflicting fields (tool_calls vs function_call).
+    Retrieve the Context for a session_id or raise 404 if not found.
     """
-    cleaned = {}
-    
-    # Keep essential fields
-    if "role" in msg:
-        cleaned["role"] = msg["role"]
-    if "content" in msg and msg["content"]:
-        cleaned["content"] = msg["content"]
-    
-    # Keep function_call but NOT tool_calls (they conflict in the API)
-    if "function_call" in msg and msg["function_call"]:
-        cleaned["function_call"] = msg["function_call"]
-    
-    # Remove internal fields
-    # (skip _fc_message, tool_calls, etc.)
-    
-    return cleaned
-
-
-def _get_or_raise(session_id: str) -> list[dict]:
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     return _sessions[session_id]
 
 
-def _get_state_or_create(session_id: str) -> dict:
-    if session_id not in _session_states:
-        _session_states[session_id] = {}
-    return _session_states[session_id]
-
-
 def _make_client() -> LLMClient:
+    """
+    Create and return an LLMClient instance with the configured model and API key.
+    """
     import os
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.error("✗ OPENAI_API_KEY not configured")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
     logger.debug("OpenAI client created")
-    return LLMClient(api_key)
+    return LLMClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
 
 
-def _make_actor() -> MathTutor:
+def _make_actor(actor_name: str = DEFAULT_ACTOR):
+    """
+    Create and return an actor instance with an LLMClient.
+    """
+    actor_cls = ACTOR_REGISTRY.get(actor_name)
+    if actor_cls is None:
+        available = ", ".join(sorted(ACTOR_REGISTRY.keys()))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown actor '{actor_name}'. Available actors: {available}",
+        )
+
     client = _make_client()
-    logger.debug("MathTutor actor instantiated")
-    return MathTutor(client, prompt_template=SYSTEM_PROMPT)
+    actor = actor_cls(client)
+    logger.debug(f"{actor_name} actor instantiated")
+    return actor
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +183,19 @@ class EvaluateResponse(BaseModel):
     distribution: list[float]
 
 
+def _resolve_frontend_index() -> FsPath | None:
+    """Return the built frontend entrypoint, supporting both raw and SolidJS builds."""
+    primary = WEB_DIST_DIR / "index.html"
+    if primary.exists():
+        return primary
+
+    solid = WEB_DIST_DIR / "index.solidjs.html"
+    if solid.exists():
+        return solid
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -202,19 +212,23 @@ def create_session() -> SessionResponse:
     subsequent ``/sessions/{session_id}/chat`` calls.
     """
     session_id = str(uuid.uuid4())
-    _sessions[session_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    _session_states[session_id] = {}
+    context = Context(
+        trace=Trace(messages=[{"role": "system", "content": SYSTEM_PROMPT}]),
+        state=State(data={}),
+    )
+    _sessions[session_id] = context
     logger.info(f"✓ Session created: {session_id}")
     return SessionResponse(session_id=session_id)
 
 
 @app.post(
-    "/sessions/{session_id}/chat",
+    "/sessions/{session_id}/{actor_id}/chat",
     response_model=ChatResponse,
     summary="Send a message and get the assistant reply",
 )
 def chat(
     session_id: Annotated[str, Path(description="Session ID returned by POST /sessions")],
+    actor_id: Annotated[str, Path(description="Actor ID (e.g. MathTutor)")],
     body: ChatRequest,
 ) -> ChatResponse:
     """
@@ -226,30 +240,17 @@ def chat(
         msg_preview = body.message[:60] + ("..." if len(body.message) > 60 else "")
         logger.info(f"→ Session {session_id} | Message: {msg_preview}")
         
-        messages = _get_or_raise(session_id)
-        state = _get_state_or_create(session_id)
+        context = _get_or_raise(session_id)
+        user_message = {"role": "user", "content": body.message}
+        logger.debug(f"  History: {len(context.trace.messages)} messages")
 
-        messages.append({"role": "user", "content": body.message})
-        logger.debug(f"  History: {len(messages)} messages")
-
-        actor = _make_actor()
-        logger.debug("Calling MathTutor.run()...")
-        msg, state = actor.run(messages=messages, model=MODEL, state=state)
-        logger.debug(f"  Response role: {msg.get('role', 'unknown')} | Content: {len(msg.get('content', ''))} chars")
-
-        # Extract reply from content, function call result, or state update
-        reply = msg.get("content", "")
-        if not reply and msg.get("_fc_message"):
-            reply = msg.get("_fc_message")
-            logger.info(f"  Function result: {reply[:60]}...")
-        if not reply and msg.get("function_call"):
-            fc = msg.get("function_call")
-            reply = f"Executing {fc['name']}..."
-            logger.info(f"  Function call: {fc['name']}")
+        actor = _make_actor(actor_id)
+        logger.debug(f"Calling {actor_id}.chat_turn()...")
+        reply, context = actor.chat_turn(context=context, user_message=user_message)
+        logger.debug(f" {actor_id}.chat_turn() completed and updated context")
         
-        # Store cleaned message (removes tool_calls/function_call conflicts)
-        messages.append(_clean_message_for_storage(msg))
-        _session_states[session_id] = state
+        # Persist updated context
+        _sessions[session_id] = context
 
         reply_preview = reply[:60] + ("..." if len(reply) > 60 else "")
         logger.info(f"✓ Reply (first 60 chars): {reply_preview}")
@@ -272,8 +273,8 @@ def get_history(
     session_id: Annotated[str, Path(description="Session ID")],
 ) -> HistoryResponse:
     """Return the full conversation history (including the system prompt)."""
-    messages = _get_or_raise(session_id)
-    return HistoryResponse(session_id=session_id, messages=messages)
+    context = _get_or_raise(session_id)
+    return HistoryResponse(session_id=session_id, messages=context.trace.messages)
 
 
 @app.delete(
@@ -287,8 +288,6 @@ def delete_session(
     """Remove a session, freeing its stored message history."""
     _get_or_raise(session_id)
     del _sessions[session_id]
-    if session_id in _session_states:
-        del _session_states[session_id]
     logger.info(f"⊘ Session deleted: {session_id}")
 
 
@@ -299,10 +298,9 @@ def delete_session(
 )
 def clear_all_sessions() -> None:
     """Clear all sessions. Useful for development/testing."""
-    global _sessions, _session_states
+    global _sessions
     count = len(_sessions)
     _sessions.clear()
-    _session_states.clear()
     logger.info(f"✓ Cleared all {count} sessions")
 
 
@@ -344,6 +342,18 @@ def evaluate(
     except Exception as e:
         logger.error(f"✗ Error in evaluate endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/", include_in_schema=False)
+def frontend_index() -> FileResponse:
+    """Serve whichever frontend variant was built most recently."""
+    index_file = _resolve_frontend_index()
+    if index_file is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Frontend build not found. Build web assets first (e.g., make web.build).",
+        )
+    return FileResponse(index_file)
 
 
 app.mount("/", StaticFiles(directory="web/dist", html=True))

@@ -5,7 +5,7 @@
 
 """
     Plugin specification definitions using pluggy for tool discovery and execution.
-    Defines the interface for getting tools and calling them with state management.
+    Defines the interface for getting tools and calling them with context management.
 """
 
 import pluggy
@@ -21,7 +21,7 @@ class ToolSpec:
         """
 
     @hookspec
-    def call_tool(self, name: str, arguments: dict, state):
+    def call_tool(self, name: str, arguments: dict, context):
         """
-        Execute tool and return updated state
+        Execute tool and return updated context
         """

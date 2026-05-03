@@ -11,11 +11,9 @@ import logging
 import re
 import textwrap
 from pydantic import BaseModel, Field
-from sympy import symbols, solve, diff, latex
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
 
 from ..actor import LLMActor
-
+from ..clients.sympy import solve_math_problem_with_sympy
 logger = logging.getLogger(__name__)
 
 
@@ -23,127 +21,6 @@ class StudentInfo(BaseModel):
     """Student information."""
     name: str = Field(..., description="Student's full name")
     age: int = Field(..., description="Student's age")
-
-
-def solve_math_problem_with_sympy(problem: str) -> dict:
-    """
-    Solves a mathematical problem using SymPy and formats with natural wording and LaTeX.
-    
-    Supports multiple syntaxes:
-    - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
-    - "solve(expr,x)" to solve for x in an expression (e.g., "solve(2x + 3, x)")
-    - "2x + 3 = 7" for equations
-    - "7x^2 + 3x - 5" for expression evaluation
-    
-    Args:
-        problem (str): The math problem string
-        
-    Returns:
-        dict: Contains 'type', 'expression', 'result', 'latex', and 'message' keys
-        
-    Raises:
-        ValueError: If the syntax is invalid
-    """
-    # Create symbolic variable 'x' - tells SymPy that 'x' is a mathematical variable
-    x = symbols('x')  # Default variable
-    
-    # CASE 1: Derivative using diff(expr, variable)
-    if problem.startswith('diff('):
-        # Extract expression and variable using regex pattern: diff(..., ...)
-        match = re.match(r'diff\((.+),\s*(\w+)\)', problem)
-        if match:
-            # Get expression string and variable name from the regex match
-            expr_str, var_name = match.groups()
-            # Create symbolic variable for differentiation
-            var = symbols(var_name)
-            # Parse string into SymPy expression (e.g., "7x^2" -> mathematical object)
-            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
-            # Calculate derivative: d/dx of expr
-            result = diff(expr, var)
-            # Convert to LaTeX format and remove spaces for clean output
-            expr_latex = latex(expr).replace(' ', '')
-            result_latex = latex(result).replace(' ', '')
-            # Create human-readable message with LaTeX delimiters ($...$)
-            message = f"When we differentiate ${expr_latex}$, we get ${result_latex}$ from SymPy."
-            # Return result with type indicator and all components
-            return {
-                'type': 'derivative',
-                'expression': str(expr),
-                'result': str(result),
-                'latex': f"${expr_latex}$ → ${result_latex}$",
-                'message': message
-            }
-        else:
-            raise ValueError("Invalid diff syntax. Use: diff(expression, variable)")
-    # CASE 2: Solve using solve(expr, variable) - finds where expr = 0
-    elif problem.startswith('solve('):
-        # Extract expression and variable using regex pattern
-        match = re.match(r'solve\((.+),\s*(\w+)\)', problem)
-        if match:
-            # Get expression and variable from regex match
-            expr_str, var_name = match.groups()
-            # Create symbolic variable
-            var = symbols(var_name)
-            # Parse expression string into SymPy object
-            expr = parse_expr(expr_str, transformations=(standard_transformations + (implicit_multiplication_application,)))
-            # Solve: find all values of 'var' that make expr = 0
-            solutions = solve(expr, var)
-            # Convert to LaTeX, removing spaces
-            expr_latex = latex(expr).replace(' ', '')
-            # Format multiple solutions as comma-separated LaTeX strings
-            solutions_latex = ', '.join([latex(sol).replace(' ', '') for sol in solutions])
-            # Create explanation message showing the problem and solution
-            message = f"Solving ${expr_latex} = 0$ for ${var_name}$: ${var_name} = {solutions_latex}$ with SymPy."
-            # Return with type and all components
-            return {
-                'type': 'solve',
-                'expression': str(expr),
-                'result': str(solutions),
-                'latex': solutions_latex,
-                'message': message
-            }
-        else:
-            raise ValueError("Invalid solve syntax. Use: solve(expression, variable)")
-    # CASE 3: Equation solving (contains = sign, e.g., "2x + 3 = 7")
-    elif '=' in problem:
-        # Split at = sign to get left and right sides
-        lhs, rhs = problem.split('=')
-        # Rearrange to standard form: lhs - rhs = 0 for solving
-        expr = parse_expr(lhs.strip()) - parse_expr(rhs.strip())
-        # Solve the rearranged equation
-        solutions = solve(expr, x)
-        # Convert both sides to LaTeX for display
-        lhs_latex = latex(parse_expr(lhs.strip())).replace(' ', '')
-        rhs_latex = latex(parse_expr(rhs.strip())).replace(' ', '')
-        # Format solutions as LaTeX string
-        solutions_latex = ', '.join([latex(sol).replace(' ', '') for sol in solutions])
-        # Create message showing original equation and solution
-        message = f"Solving ${lhs_latex} = {rhs_latex}$ for $x$: $x = {solutions_latex}$ with SymPy."
-        # Return with equation type
-        return {
-            'type': 'equation',
-            'expression': problem,
-            'result': str(solutions),
-            'latex': solutions_latex,
-            'message': message
-        }
-    # CASE 4: Expression formatting (no operation, just format the math)
-    else:
-        # Parse and format the expression without solving anything
-        expr = parse_expr(problem, transformations=(standard_transformations + (implicit_multiplication_application,)))
-        # Convert to LaTeX, removing spaces
-        expr_latex = latex(expr).replace(' ', '')
-        # Create description message with SymPy attribution
-        message = f"The expression ${expr_latex}$ evaluates to ${expr}$ with SymPy."
-        # Return with expression type (not solved, just formatted)
-        return {
-            'type': 'expression',
-            'expression': str(expr),
-            'result': str(expr),
-            'latex': expr_latex,
-            'message': message
-        }
-
 
 class MathTutor(LLMActor):
     """A math tutor agent with function calls for solving problems and tracking student progress."""
@@ -160,7 +37,7 @@ class MathTutor(LLMActor):
     #   
     #   # Override at prompt building time
     #   messages = tutor.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
-    system_prompt = textwrap.dedent("""\
+    prompt_template = textwrap.dedent("""\
         You are a helpful and patient math tutor{student_name}.
         Your goal is to help students{level} understand mathematical concepts and solve problems step by step.
 
@@ -177,7 +54,7 @@ class MathTutor(LLMActor):
         - Be supportive and patient with students who are learning{focus_areas}
         """).strip()
 
-    def fc_solve_math_problem(self, state, problem: str):
+    def fc_solve_math_problem(self, context, problem: str):
         """
         Solves a mathematical problem using SymPy.
 
@@ -187,29 +64,29 @@ class MathTutor(LLMActor):
             - "solve(expr,x )" to solve for x in an expression (e.g., "solve(2x + 3 = 7, x)")
             
         Returns:
-            tuple: (message, state) where message describes the solution for context
+            tuple: (message, context) where message describes the solution for context
         """
         try:
             # Call the solver function to handle all types of math problems
             result = solve_math_problem_with_sympy(problem)
-            # Store the full result in state (type, expression, result, latex, message)
-            state["solution"] = result
+            # Store the full result in context (type, expression, result, latex, message)
+            context.state.data["solution"] = result
             # Extract the natural language message with LaTeX for sending to user
             message = result['message']
             # Log the solution for debugging
             logger.warning(f"Math solution message: {message}")
         except Exception as e:
             # Handle any parsing or math errors gracefully
-            state["solution"] = f"Error solving equation: {str(e)}"
+            context.state.data["solution"] = f"Error solving equation: {str(e)}"
             message = f"Error solving equation: {str(e)}"
             logger.error(f"Math error: {message}")
         
-        # Log updated state for tracking conversation history
-        logger.warning(f"State updated in fc_solve_math_problem: {state}")
-        # Return both message (for user) and state (for LLM context)
-        return message, state
+        # Log updated context for tracking conversation history
+        logger.warning(f"Context updated in fc_solve_math_problem: {context.state.data}")
+        # Return both message (for user) and context (for LLM context)
+        return message, context
 
-    def fc_student_completed(self, state, student: StudentInfo):
+    def fc_student_completed(self, context, student: StudentInfo):
         """
         Mark that a student has completed an exercise.
 
@@ -217,13 +94,93 @@ class MathTutor(LLMActor):
             student (StudentInfo): The student who completed the exercise.
             
         Returns:
-            tuple: (message, state) where message describes the completion for context
+            tuple: (message, context) where message describes the completion for context
         """
-        # Record the student's name in state to track who completed the exercise
-        state["completed_by"] = student.name
+        # Record the student's name in context to track who completed the exercise
+        context.state.data["completed_by"] = student.name
         # Create confirmation message with student info
         message = f"Student {student.name} (age {student.age}) has completed the exercise."
-        # Log the state update
-        logger.warning(f"State updated in fc_student_completed: {state}")
-        # Return confirmation and updated state
-        return message, state
+        # Log the context update
+        logger.warning(f"Context updated in fc_student_completed: {context.state.data}")
+        # Return confirmation and updated context
+        return message, context
+
+
+# ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+# Smoke test
+#
+
+def run_smoke_test(console):
+    """Smoke test for MathTutor demonstrating schema generation and interactive chat."""
+    import os
+    from dotenv import load_dotenv
+    from rich.rule import Rule
+    from rich.markdown import Markdown
+    from ..client import Context, Trace
+    from ..clients.llm import LLMClient
+
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    assert api_key, "Missing OPENAI_API_KEY in .env"
+
+    client = LLMClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
+    tutor = MathTutor(client)
+
+    # Schema generation
+    console.print(Rule("MathTutor Schema Generation Test"))
+    schemas = MathTutor.schema()
+    fnames = MathTutor.fnames()
+    console.print(f"\nDiscovered functions: {fnames}")
+    console.print(f"Generated schemas: {len(schemas)} function(s)")
+    assert len(schemas) == 2, f"Expected 2 schemas, got {len(schemas)}"
+    assert schemas[0]["type"] == "function"
+    assert schemas[0]["function"]["name"] in ["fc_solve_math_problem", "fc_student_completed"]
+    assert "parameters" in schemas[0]["function"]
+    console.print("✅ Schema generation verified\n")
+
+    # Interactive chat
+    turn_count = [0]
+
+    def header():
+        console.print(Rule("Math Tutor Chat"))
+
+    def get_input():
+        turn_count[0] += 1
+        if turn_count[0] == 1:
+            text = "What is the derivative of 7x^2 + 3x - 5? Just the result, no explanation yet."
+        elif turn_count[0] == 2:
+            text = "Can you explain how?"
+        else:
+            return None
+        indented = textwrap.indent(text, "  ")
+        console.print(f"[yellow][user>[/]\n{indented}")
+        return text
+
+    def display_response(text):
+        console.print(f"[cyan][tutor>[/]")
+        console.print(Markdown(text))
+
+    def on_end():
+        console.print("\n[green]✓ Session Complete[/]")
+
+    context = tutor.interactive_chat(
+        context=Context(trace=Trace(messages=tutor.build_system_prompt())),
+        on_display_header=header,
+        on_get_user_input=get_input,
+        on_display_response=display_response,
+        on_session_end=on_end,
+    )
+
+    print("\n✅ MathTutor smoke test passed!")
+
+
+if __name__ == "__main__":
+    from rich.logging import RichHandler
+    from rich.console import Console
+    console = Console()
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(message)s",
+        handlers=[RichHandler(console=console, rich_tracebacks=True)],
+    )
+    run_smoke_test(console)
