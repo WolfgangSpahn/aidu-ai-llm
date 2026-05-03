@@ -51,11 +51,28 @@ run:                                      ## Run the analysis application (defau
 smoke.client:                             ## Run a quick smoke test for the client
 	$(UV) run python -m $(SRC).client
 
-smoke.requester:                           ## Run a quick smoke test for the requester
+smoke.client.llm:						  ## Run a quick smoke test for the LLM client	
+	$(UV) run python -m $(SRC).clients.llm
+
+smoke.client.sympy:					      ## Run a quick smoke test for the SymPy client	
+	$(UV) run python -m $(SRC).clients.sympy
+
+smoke.requester:                          ## Run a quick smoke test for the requester
 	$(UV) run python -m $(SRC).requester
 
-smoke.actor:                               ## Run a quick smoke test for the actor
+smoke.actor:                              ## Run a quick smoke test for the actor
 	$(UV) run python -m $(SRC).actor
+
+smoke.actors.mathTutor:                   ## Run a quick smoke test for the math tutor actor
+	$(UV) run python -m $(SRC).actors.mathTutor
+
+smoke:									  ## Run all smoke tests
+	$(MAKE) smoke.client
+	$(MAKE) smoke.client.llm
+	$(MAKE) smoke.client.sympy
+	$(MAKE) smoke.requester
+	$(MAKE) smoke.actor
+	$(MAKE) smoke.actors.mathTutor
 
 # Testing targets
 	
