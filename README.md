@@ -28,8 +28,7 @@ Copy .env_example to .env and add your OpenAI Token there.
 When you have ensured the prerequisites, this should work. Clean up, install dependencies, build frontend, and run the server:
 
 ```bash
-make clean          # clean up python caches and build artifacts
-make web.clean      # clean up web frontend
+make clean          # clean up python backend and web frontend
 make web.install    # install web frontend dependencies
 make web.build      # build web frontend
 make install        # install python dependencies
@@ -37,6 +36,10 @@ make serve          # run FastAPI server
 ```
 
 Open: http://localhost:8000
+
+Then you can interact with the chat interface.
+
+![Chat interface screenshot](./manuals/MathTutor.png)
 
 ## Project Layout
 
