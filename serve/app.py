@@ -165,6 +165,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
+    context: dict
 
 
 class HistoryResponse(BaseModel):
@@ -255,7 +256,8 @@ def chat(
         reply_preview = reply[:60] + ("..." if len(reply) > 60 else "")
         logger.info(f"✓ Reply (first 60 chars): {reply_preview}")
         logger.info(f"✓ Full reply ({len(reply)} chars): {reply}")
-        return ChatResponse(session_id=session_id, reply=reply)
+        logger.info(f"✓ Updated context: {len(context.trace.messages)} messages in context.trace.messages, context.state keys: {list(context.state.data.keys())}, context.control.data: {context.control.data}, context.control.duration: {context.control.duration:.2f}s")
+        return ChatResponse(session_id=session_id, reply=reply, context=context.model_dump())
     
     except HTTPException:
         raise

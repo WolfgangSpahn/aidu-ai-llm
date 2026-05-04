@@ -29,7 +29,7 @@ import katex from 'katex';
 // @ts-ignore
 import 'katex/dist/katex.min.css';
 
-const APP_VERSION = '0.2.4';
+const APP_VERSION = '0.2.5';
 console.log(`🚀 AIDU AI LLM Web (SolidJS) v${APP_VERSION} loaded`);
 
 const ACTOR_ID = "MathTutor";
@@ -38,7 +38,126 @@ const ACTOR_ID = "MathTutor";
 type Message = {
   role: "user" | "assistant";
   content: string;
+  duration?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  model?: string;
+  timestamp?: number;
 };
+
+type ChatResponse = {
+  session_id: string;
+  reply: string;
+  context: {
+    trace?: {
+      messages?: Array<{
+        role?: string;
+        content?: string;
+        duration?: number;
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+        cost_usd?: number;
+        model?: string;
+        timestamp?: number;
+      }>;
+    };
+  };
+};
+
+function isChatResponse(value: unknown): value is ChatResponse {
+  if (!value || typeof value !== 'object') return false;
+
+  const response = value as Record<string, unknown>;
+  return (
+    typeof response.session_id === 'string' &&
+    typeof response.reply === 'string' &&
+    !!response.context &&
+    typeof response.context === 'object'
+  );
+}
+
+function normalizeTraceMessages(messages: Array<{ role?: string; content?: string; duration?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost_usd?: number; model?: string; timestamp?: number }> | undefined): Message[] {
+  if (!messages) return [];
+
+  return messages
+    .filter((msg): msg is { role: "user" | "assistant"; content: string; duration?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost_usd?: number; model?: string; timestamp?: number } => (
+      (msg.role === "user" || msg.role === "assistant") &&
+      typeof msg.content === "string"
+    ))
+    .map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      duration: typeof msg.duration === "number" ? msg.duration : undefined,
+      prompt_tokens: typeof msg.prompt_tokens === "number" ? msg.prompt_tokens : undefined,
+      completion_tokens: typeof msg.completion_tokens === "number" ? msg.completion_tokens : undefined,
+      total_tokens: typeof msg.total_tokens === "number" ? msg.total_tokens : undefined,
+      cost_usd: typeof msg.cost_usd === "number" ? msg.cost_usd : undefined,
+      model: typeof msg.model === "string" ? msg.model : undefined,
+      timestamp: typeof msg.timestamp === "number" ? msg.timestamp : undefined,
+    }));
+}
+
+function formatDuration(seconds: number | undefined): string | null {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+
+  return `${seconds.toFixed(1)}s`;
+}
+
+function formatTokens(totalTokens: number | undefined): string | null {
+  if (typeof totalTokens !== "number" || !Number.isFinite(totalTokens) || totalTokens <= 0) {
+    return null;
+  }
+
+  return `${Math.round(totalTokens)} tok`;
+}
+
+function formatCost(costUsd: number | undefined): string | null {
+  if (typeof costUsd !== "number" || !Number.isFinite(costUsd) || costUsd <= 0) {
+    return null;
+  }
+
+  return `${(costUsd*100000).toFixed(1)} 10⁻³ cents`;
+}
+
+function getMessageDurationLabel(messages: Message[], index: number): string | null {
+  const msg = messages[index];
+  if (!msg) return null;
+
+  if (msg.role === "user") {
+    if (typeof msg.duration === "number") {
+      return formatDuration(msg.duration);
+    }
+
+    const previous = messages[index - 1];
+    if (!previous || typeof previous.timestamp !== "number" || typeof msg.timestamp !== "number") {
+      return null;
+    }
+
+    return formatDuration(msg.timestamp - previous.timestamp);
+  }
+
+  if (msg.role === "assistant") {
+    return formatDuration(msg.duration);
+  }
+
+  return null;
+}
+
+function getMessageMetaLabel(messages: Message[], index: number): string | null {
+  const msg = messages[index];
+  if (!msg) return null;
+
+  const duration = getMessageDurationLabel(messages, index);
+  const tokens = formatTokens(msg.total_tokens);
+  const cost = formatCost(msg.cost_usd);
+  const parts = [duration, tokens, cost].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" | ") : null;
+}
 
 // ---------------------------------------------------------------------------
 // Markdown + LaTeX renderer
@@ -125,6 +244,8 @@ function App() {
   const [sessionId, setSessionId]   = createSignal<string>( localStorage.getItem("chat_session_id") || "" );
   const [loading, setLoading]       = createSignal(false);
   const [inputValue, setInputValue] = createSignal("");
+  const [inputStartedAt, setInputStartedAt] = createSignal<number | null>(null);
+
 
   // Persist message history whenever it changes.
   createEffect(() => { localStorage.setItem("chat", JSON.stringify(messages())); });
@@ -138,9 +259,18 @@ function App() {
     queueMicrotask(() => window.scrollTo(0, document.body.scrollHeight));
   });
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, userDuration: number) {
     // Optimistic UI update: show user message immediately.
-    setMessages(prev => [...prev, { role: "user", content }]);
+      setMessages(prev => [...prev, {
+        role: "user",
+        content,
+        duration: userDuration,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+        timestamp: Date.now() / 1000,
+      }]);
     setLoading(true);
 
     try {
@@ -161,7 +291,7 @@ function App() {
       const res = await fetch(`/sessions/${encodeURIComponent(sid)}/${ACTOR_ID}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({ message: content, duration: userDuration }),
       });
 
       if (!res.ok) {
@@ -177,13 +307,34 @@ function App() {
         throw new Error(`Chat request failed (${res.status})`);
       }
 
-      const data = await res.json();
-      console.log('Backend response:', data.reply);
-      // Append assistant reply to conversation.
-      setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      const data: unknown = await res.json();
+      console.log('Backend response:', data);
+
+      if (!isChatResponse(data)) {
+        throw new Error(`Invalid chat response shape: ${JSON.stringify(data)}`);
+      }
+
+      const traceMessages = normalizeTraceMessages(data.context.trace?.messages);
+      if (traceMessages.length === 0) {
+        throw new Error(`Missing context.trace.messages in chat response: ${JSON.stringify(data.context)}`);
+      }
+
+      for (let i = traceMessages.length - 1; i >= 0; i--) {
+        const current = traceMessages[i];
+        if (!current) continue;
+
+        if (current.role === "user") {
+          if (typeof current.duration !== "number" || current.duration <= 0) {
+            current.duration = userDuration;
+          }
+          break;
+        }
+      }
+
+      setMessages(traceMessages);
     } catch (err) {
-      // User-friendly fallback when request fails.
-      setMessages(prev => [...prev, { role: "assistant", content: "Error contacting server" }]);
+      const message = err instanceof Error ? err.message : "Error contacting server";
+      setMessages(prev => [...prev, { role: "assistant", content: `Error contacting server: ${message}` }]);
       console.error(err);
     } finally {
       // Always stop loading spinner.
@@ -196,8 +347,12 @@ function App() {
     e.preventDefault();
     const value = inputValue().trim();
     if (!value) return;
+    const now = performance.now();
+    const started = inputStartedAt();
+    const userDuration = started !== null ? Math.max(0, (now - started) / 1000) : 0;
     setInputValue("");
-    sendMessage(value);
+    setInputStartedAt(null);
+    sendMessage(value, userDuration);
   }
 
   // Clears local chat history and session id after confirmation.
@@ -207,20 +362,36 @@ function App() {
       localStorage.removeItem("chat");
       setSessionId("");
       setMessages([]);
+      setInputStartedAt(null);
     }
   }
 
   return (
     <>
+      {/* Title with version badge */}
+      <h1>
+        AIDU (SolidJS)
+        <span style={{ "font-size": "0.5em", color: "#888", "margin-left": "8px" }}>
+          frontend: v{APP_VERSION}
+        </span>
+      </h1>
+
       {/* Conversation timeline */}
       <div id="messages">
         <For each={messages()}>
           {/* Render each message as sanitized Markdown + math HTML */}
-          {(msg) => (
-            <div
-              class={`msg ${msg.role}`}
-              innerHTML={renderMarkdownWithMath(msg.content)}
-            />
+          {(msg, index) => (
+            <div style={{ display: "flex", "flex-direction": "column", "align-items": msg.role === "user" ? "flex-end" : "flex-start" }}>
+              <Show when={getMessageDurationLabel(messages(), index()) !== null}>
+                <div style={{ "font-size": "0.75rem", color: "#888", "margin-bottom": "4px" }}>
+                  {getMessageMetaLabel(messages(), index())}
+                </div>
+              </Show>
+              <div
+                class={`msg ${msg.role}`}
+                innerHTML={renderMarkdownWithMath(msg.content)}
+              />
+            </div>
           )}
         </For>
         {/* Temporary assistant bubble while waiting for network response */}
@@ -237,7 +408,16 @@ function App() {
           placeholder="Type a message…"
           autocomplete="off"
           value={inputValue()}
-          onInput={(e) => setInputValue(e.currentTarget.value)}
+          onInput={(e) => {
+            const nextValue = e.currentTarget.value;
+            if (nextValue.length > 0 && inputStartedAt() === null) {
+              setInputStartedAt(performance.now());
+            }
+            if (nextValue.length === 0) {
+              setInputStartedAt(null);
+            }
+            setInputValue(nextValue);
+          }}
         />
         <button type="submit">Send</button>
         <button type="button" id="clearBtn" onClick={handleClear}>Clear</button>

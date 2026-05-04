@@ -18,7 +18,7 @@ class MathExtractorEvaluator(Evaluator):
     Example: ["3x^2", "2x + 5", "d/dx(x^3)"]
     """
     
-    system_prompt = textwrap.dedent("""
+    prompt_template = textwrap.dedent("""
         You are a mathematics expression extractor. Your task is to identify and extract
         all mathematical expressions from the given student message.
         

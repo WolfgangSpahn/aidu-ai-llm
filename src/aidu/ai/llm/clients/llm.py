@@ -46,6 +46,13 @@ class LLMClient(Client):
         response = self.client.chat.completions.create(**kwargs)
 
         message = response.choices[0].message.model_dump()
+        usage = response.usage
+
+        if usage is not None:
+            message["prompt_tokens"] = int(getattr(usage, "prompt_tokens", 0) or 0)
+            message["completion_tokens"] = int(getattr(usage, "completion_tokens", 0) or 0)
+            message["total_tokens"] = int(getattr(usage, "total_tokens", 0) or 0)
+        message["model"] = self.model
 
         # --- normalize tool call ---
         if "tool_calls" in message and message["tool_calls"]:
