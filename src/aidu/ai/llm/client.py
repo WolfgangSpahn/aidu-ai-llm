@@ -76,6 +76,10 @@ class Control(BaseModel):
         default_factory=dict,
         description="Key-value pairs representing control information for execution and flow decisions.",
     )
+    duration: float = Field(
+        default=0.0,
+        description="Duration of the last chat request in seconds.",
+    )
 
 class Context(BaseModel):
     """Typed runtime context carrying history, mutable state, and control data."""

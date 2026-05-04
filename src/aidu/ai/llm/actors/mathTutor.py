@@ -12,6 +12,8 @@ import re
 import textwrap
 from pydantic import BaseModel, Field
 
+from aidu.ai.llm.client import Context, Message
+
 from ..actor import LLMActor
 from ..clients.sympy import solve_math_problem_with_sympy
 logger = logging.getLogger(__name__)
@@ -54,7 +56,7 @@ class MathTutor(LLMActor):
         - Be supportive and patient with students who are learning{focus_areas}
         """).strip()
 
-    def fc_solve_math_problem(self, context, problem: str):
+    def fc_solve_math_problem(self, context: Context, problem: str) -> tuple[Message, Context]:
         """
         Solves a mathematical problem using SymPy.
 
@@ -77,8 +79,8 @@ class MathTutor(LLMActor):
             logger.warning(f"Math solution message: {message}")
         except Exception as e:
             # Handle any parsing or math errors gracefully
-            context.state.data["solution"] = f"Error solving equation: {str(e)}"
-            message = f"Error solving equation: {str(e)}"
+            context.state.data["solution"] = f"Math input error: {str(e)}"
+            message = f"I couldn't solve that yet. {str(e)}"
             logger.error(f"Math error: {message}")
         
         # Log updated context for tracking conversation history
@@ -86,7 +88,7 @@ class MathTutor(LLMActor):
         # Return both message (for user) and context (for LLM context)
         return message, context
 
-    def fc_student_completed(self, context, student: StudentInfo):
+    def fc_student_completed(self, context: Context, student: StudentInfo) -> tuple[Message, Context]:
         """
         Mark that a student has completed an exercise.
 

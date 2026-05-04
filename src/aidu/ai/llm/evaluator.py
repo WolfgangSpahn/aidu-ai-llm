@@ -23,11 +23,11 @@ class Evaluator(LLMRequester):
     The Likert scale has 5 points, and the evaluator returns a normalized probability 
     distribution across these points.
     
-    Subclass and define system_prompt to create specific evaluators.
+    Subclass and define prompt_template to create specific evaluators.
     See evaluators/ subdirectory for concrete implementations.
     """
 
-    system_prompt = None  # Override in subclass
+    prompt_template = None
     likert_labels = [
         "Very likely",
         "Likely", 
@@ -45,6 +45,26 @@ class Evaluator(LLMRequester):
             tools=tools
         )
 
+    @staticmethod
+    def _parse_json_response(response_text: str) -> dict:
+        """Parse JSON response, accepting fenced markdown JSON blocks as fallback."""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            if "```json" in response_text:
+                json_str = response_text.split("```json", 1)[1].split("```", 1)[0].strip()
+                return json.loads(json_str)
+            raise
+
+    def _run_chat(self, user_prompt: str, eval_params: dict) -> tuple[dict, Context]:
+        """Run one evaluator turn through the shared requester chat contract."""
+        system_messages = self.build_system_prompt(prompt_params=eval_params)
+        context = Context(trace=Trace(messages=system_messages))
+        return self.chat(
+            message={"role": "user", "content": user_prompt},
+            context=context,
+        )
+
 
     def evaluate(self, user_prompt="", eval_params: dict = None, enforce_json: bool = True) -> list[float] | None:
         """
@@ -58,19 +78,16 @@ class Evaluator(LLMRequester):
         Returns:
             list[float]: Probability distribution over 5 Likert points, or None on error
         """
+        response_text = ""
+
         try:
             eval_params = eval_params or {}
-            system_messages = self.build_system_prompt(prompt_params=eval_params)
-            
-            # Add an explicit user prompt as the current turn to trigger evaluation
-            context = Context(trace=Trace(messages=system_messages))
-            message, _ = self.chat(
-                message={"role": "user", "content": user_prompt},
-                context=context,
-            )
+            del enforce_json
+
+            message, _ = self._run_chat(user_prompt=user_prompt, eval_params=eval_params)
             
             response_text = message.get("content", "")
-            result = json.loads(response_text)
+            result = self._parse_json_response(response_text)
             
             distribution = result.get("distribution")
             if not distribution or len(distribution) != 5:
@@ -86,21 +103,6 @@ class Evaluator(LLMRequester):
             return distribution
 
         except json.JSONDecodeError as e:
-            # Try to extract JSON from markdown code blocks
-            if "```json" in response_text:
-                try:
-                    json_str = response_text.split("```json")[1].split("```")[0].strip()
-                    result = json.loads(json_str)
-                    distribution = result.get("distribution")
-                    if distribution and len(distribution) == 5:
-                        total = sum(distribution)
-                        if total > 0:
-                            distribution = [x / total for x in distribution]
-                        logger.info(f"Evaluator distribution (from markdown): {distribution}")
-                        return distribution
-                except Exception:
-                    pass
-            
             logger.error(f"Evaluation failed (JSON parse): {e}")
             logger.debug(f"Response text: {response_text[:200]}")
             return None

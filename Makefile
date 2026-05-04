@@ -13,7 +13,7 @@ help:                                     ## Show this help
 
 # install targets
 
-install:                                  ## Install python dependencies and set up environment
+server.install:                                  ## Install python dependencies and set up environment
 	@echo "Installing dependencies"
 	@$(UV) sync
 
@@ -22,7 +22,7 @@ install:                                  ## Install python dependencies and set
 
 # Cleanup targets
 
-clean.server:                             ## Clean temporary and cache files
+server.clean:                             ## Clean temporary and cache files
 	rm -rf .pytest_cache
 	rm -rf .coverage
 	rm -rf htmlcov
@@ -32,17 +32,17 @@ clean.server:                             ## Clean temporary and cache files
 	$(FIND) . -type d -name '__pycache__' -delete
 
 wipe:                                     ## Delete all uv-related files for a fresh start
-wipe: clean
+wipe: server.clean
 	@echo "Removing uv.lock"
 	rm -f uv.lock
 
 
 # Application targets
 
-serve:	                                  ## Run the web server for the application
+server.run:	                               ## Run the web server for the application
 	$(UV) run python -m serve.app
 
-run:                                      ## Run the analysis application (default)
+app.run:                                   ## Run the analysis application (default)
 	@echo "Running the application"
 	@echo "no main yet"
 
@@ -66,6 +66,9 @@ smoke.actor:                              ## Run a quick smoke test for the acto
 smoke.actors.mathTutor:                   ## Run a quick smoke test for the math tutor actor
 	$(UV) run python -m $(SRC).actors.mathTutor
 
+smoke.solver.mathSolver:				   ## Run a quick smoke test for the math solver
+	$(UV) run python -m $(SRC).solver.MathSolver
+
 smoke:									  ## Run all smoke tests
 	$(MAKE) smoke.client
 	$(MAKE) smoke.client.llm
@@ -73,6 +76,7 @@ smoke:									  ## Run all smoke tests
 	$(MAKE) smoke.requester
 	$(MAKE) smoke.actor
 	$(MAKE) smoke.actors.mathTutor
+	$(MAKE) smoke.solver.mathSolver
 
 # Testing targets
 	
@@ -94,5 +98,11 @@ web.build:                                ## Build the web frontend
 	cd web && $(MAKE) build
 
 
-clean: clean.server web.clean
+clean: server.clean web.clean
 	@echo "Cleaned server and web frontend"
+
+install: server.install web.install
+	@echo "Installed server and web frontend"
+
+serve: server.run
+	@echo "Running the application"

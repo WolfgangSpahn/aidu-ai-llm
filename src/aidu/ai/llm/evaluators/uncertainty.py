@@ -30,7 +30,7 @@ class UncertaintyEvaluator(Evaluator):
         "Very poorly-calibrated"
     ]
 
-    system_prompt = textwrap.dedent("""\
+    prompt_template = textwrap.dedent("""\
         Evaluate how well-calibrated the student's confidence is in their response.
         
         Context: {context}

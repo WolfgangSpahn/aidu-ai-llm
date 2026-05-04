@@ -8,9 +8,15 @@ SymPy-based client that solves mathematical problems locally without an LLM.
 """
 
 import re
+import json
 
 from sympy import symbols, solve, diff, latex
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+from sympy.parsing.sympy_parser import (
+    convert_xor,
+    implicit_multiplication_application,
+    parse_expr,
+    standard_transformations,
+)
 
 from ..client import (
     Client,
@@ -18,14 +24,67 @@ from ..client import (
     Message,
 )
 
-TRANSFORMATIONS = standard_transformations
+TRANSFORMATIONS = standard_transformations + (
+    implicit_multiplication_application,
+    convert_xor,
+)
+
+SUPERSCRIPT_MAP = str.maketrans({
+    '⁰': '0',
+    '¹': '1',
+    '²': '2',
+    '³': '3',
+    '⁴': '4',
+    '⁵': '5',
+    '⁶': '6',
+    '⁷': '7',
+    '⁸': '8',
+    '⁹': '9',
+    '⁺': '+',
+    '⁻': '-',
+})
+
+DERIVATIVE_PREFIXES = (
+    "derivate ",
+    "derive ",
+    "differentiate ",
+    "derivative of ",
+)
 
 
 def _preprocess(expr_str: str) -> str:
     """Convert implicit math notation to Python-compatible syntax."""
+    expr_str = expr_str.translate(SUPERSCRIPT_MAP)
     expr_str = expr_str.replace('^', '**')
+    expr_str = expr_str.replace('×', '*')
     expr_str = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', expr_str)
     return expr_str
+
+
+def _normalize_problem(problem: str) -> str:
+    """Normalize casual math phrasing into the compact forms handled below."""
+    normalized = problem.strip().translate(SUPERSCRIPT_MAP)
+    lowered = normalized.lower()
+
+    for prefix in DERIVATIVE_PREFIXES:
+        if lowered.startswith(prefix):
+            expression = normalized[len(prefix):].strip()
+            return f"diff({expression}, x)"
+
+    return normalized
+
+
+def _parse_math(expr_str: str):
+    """Parse a math expression and raise a user-facing error on failure."""
+    prepared = _preprocess(expr_str)
+
+    try:
+        return parse_expr(prepared, transformations=TRANSFORMATIONS)
+    except Exception as exc:
+        raise ValueError(
+            "I couldn't parse that math expression. Use forms like '4x^3', "
+            "'diff(4x^3, x)', or '2x + 3 = 7'."
+        ) from exc
 
 def solve_math_problem_with_sympy(problem: str) -> dict:
     """
@@ -46,6 +105,8 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
     Raises:
         ValueError: If the syntax is invalid
     """
+    problem = _normalize_problem(problem)
+
     # Create symbolic variable 'x' - tells SymPy that 'x' is a mathematical variable
     x = symbols('x')  # Default variable
     
@@ -59,7 +120,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Create symbolic variable for differentiation
             var = symbols(var_name)
             # Parse string into SymPy expression (e.g., "7x^2" -> mathematical object)
-            expr = parse_expr(_preprocess(expr_str), transformations=TRANSFORMATIONS)
+            expr = _parse_math(expr_str)
             # Calculate derivative: d/dx of expr
             result = diff(expr, var)
             # Convert to LaTeX format and remove spaces for clean output
@@ -87,7 +148,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Create symbolic variable
             var = symbols(var_name)
             # Parse expression string into SymPy object
-            expr = parse_expr(_preprocess(expr_str), transformations=TRANSFORMATIONS)
+            expr = _parse_math(expr_str)
             # Solve: find all values of 'var' that make expr = 0
             solutions = solve(expr, var)
             # Convert to LaTeX, removing spaces
@@ -111,12 +172,14 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
         # Split at = sign to get left and right sides
         lhs, rhs = problem.split('=')
         # Rearrange to standard form: lhs - rhs = 0 for solving
-        expr = parse_expr(_preprocess(lhs.strip())) - parse_expr(_preprocess(rhs.strip()))
+        lhs_expr = _parse_math(lhs.strip())
+        rhs_expr = _parse_math(rhs.strip())
+        expr = lhs_expr - rhs_expr
         # Solve the rearranged equation
         solutions = solve(expr, x)
         # Convert both sides to LaTeX for display
-        lhs_latex = latex(parse_expr(_preprocess(lhs.strip()))).replace(' ', '')
-        rhs_latex = latex(parse_expr(_preprocess(rhs.strip()))).replace(' ', '')
+        lhs_latex = latex(lhs_expr).replace(' ', '')
+        rhs_latex = latex(rhs_expr).replace(' ', '')
         # Format solutions as LaTeX string
         solutions_latex = ', '.join([latex(sol).replace(' ', '') for sol in solutions])
         # Create message showing original equation and solution
@@ -132,7 +195,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
     # CASE 4: Expression formatting (no operation, just format the math)
     else:
         # Parse and format the expression without solving anything
-        expr = parse_expr(_preprocess(problem), transformations=TRANSFORMATIONS)
+        expr = _parse_math(problem)
         # Convert to LaTeX, removing spaces
         expr_latex = latex(expr).replace(' ', '')
         # Create description message with SymPy attribution
@@ -182,9 +245,22 @@ class SymPyClient(Client):
         assert problem, "SymPyClient requires a 'content' field with the math problem string."
         
         result = self.process(problem)
+
+        if self.config.get("enforce_json"):
+            payload = {
+                "type": result.get("type"),
+                "expression": result.get("expression"),
+                "result": result.get("result"),
+                "latex": result.get("latex"),
+            }
+            content = json.dumps(payload)
+        else:
+            content = result["message"]
+
+            
         return {
             "role": "solver",
-            "content": result["message"],
+            "content": content,
         }
 
 
@@ -198,7 +274,7 @@ def run_smoke_test():
     from rich.table import Table
 
     console = Console()
-    client = SymPyClient('sympy', config={}, process=solve_math_problem_with_sympy)
+    client = SymPyClient('sympy', config={"enforce_json": True}, process=solve_math_problem_with_sympy)
 
     problems = [
         "diff(7x^2 + 3x - 5, x)",

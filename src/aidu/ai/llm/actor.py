@@ -19,7 +19,7 @@ from typing import get_origin, get_args
 from pydantic import BaseModel
 
 
-from .client import Context, Trace
+from .client import Context, Message, Trace
 from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class LLMActor(LLMRequester):
         class MyTutor(LLMActor):
             system_prompt = "You are a {subject} tutor{level}."
             
-            def fc_solve_problem(self, context, problem: str):
+            def fc_solve_problem(self, context: Context, problem: str) -> tuple[Message, Context]:
                 '''
                 Solves a problem.
                 
@@ -203,7 +203,46 @@ class LLMActor(LLMRequester):
         # Auto-register all fc_* methods with their full function name
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):
             if name.startswith("fc_"):
-                self.register(name, func)
+                self._assert_fc_contract(name, func)
+                self.register(name, self._wrap_fc_method(name, func))
+
+    @staticmethod
+    def _assert_fc_contract(name: str, method) -> None:
+        """Validate the fc_* method signature before exposing it to the LLM."""
+        signature = inspect.signature(method)
+        params = list(signature.parameters.values())
+
+        assert params, f"{name} must accept a 'context' argument as its first parameter"
+        assert params[0].name == "context", f"{name} must declare 'context' as its first parameter"
+        assert params[0].annotation is Context, f"{name} must annotate 'context' as Context"
+
+        for param in params:
+            assert param.kind not in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            ), f"{name} must not use *args or **kwargs"
+
+        assert (
+            signature.return_annotation == tuple[Message, Context]
+        ), f"{name} must declare return type tuple[Message, Context]"
+
+    @staticmethod
+    def _wrap_fc_method(name: str, method):
+        """Assert the runtime fc_* return contract on every invocation."""
+        def wrapped(*args, **kwargs):
+            result = method(*args, **kwargs)
+            assert isinstance(result, tuple) and len(result) == 2, (
+                f"{name} must return a tuple of (message, context)"
+            )
+
+            message, context = result
+            assert isinstance(message, dict | str), (
+                f"{name} must return a message as str or Message-compatible dict"
+            )
+            assert isinstance(context, Context), f"{name} must return Context as second tuple item"
+            return result
+
+        return wrapped
 
     @staticmethod
     def _clean_message_for_storage(msg: dict) -> dict:
@@ -233,16 +272,16 @@ class LLMActor(LLMRequester):
             fc = message.get("function_call")
             reply = f"Executing {fc['name']}..."
 
-        context.trace.messages.append(user_message)
-        stored_assistant = self._clean_message_for_storage(message)
-        if not stored_assistant.get("content") and message.get("_fc_message"):
-            stored_assistant["content"] = message.get("_fc_message")
-        context.trace.messages.append(stored_assistant)
+        context = self.store_turn(
+            context=context,
+            user_message=user_message,
+            response=message,
+        )
 
         return reply, context
 
-    def interactive_chat(self, context, 
-                        on_display_header, on_get_user_input, 
+    def interactive_chat(self, context,
+                        on_display_header, on_get_user_input,
                         on_session_end, on_display_response):
         """
         Run an interactive chat session with I/O handlers.
@@ -269,27 +308,10 @@ class LLMActor(LLMRequester):
             if not user_text:
                 continue
             
-            # Call model with the current user turn
             user_message = {"role": "user", "content": user_text}
-            message, context = self.chat(user_message, context)
-            logger.warning(f"LLM response: {message}, updated context: {context.state}")
-            
-            # Display response: text content, tool call message, or context
-            if message.get("content"):
-                on_display_response(message.get("content"))
-            elif message.get("_fc_message"):
-                # Display the actual function call result message
-                on_display_response(message.get("_fc_message"))
-            elif message.get("function_call"):
-                # Fallback: display notification if no message was returned
-                fc = message.get("function_call")
-                on_display_response(f'  Calling {fc["name"]} with: {fc["arguments"]}')
-            else:
-                on_display_response(f"context updated: {context.state}")
-            
-            # Append user and response to context trace for next turn
-            context.trace.messages.append(user_message)
-            context.trace.messages.append({"role": message.get("role"), "content": message.get("content", "")})
+            reply, context = self.chat_turn(context=context, user_message=user_message)
+            logger.warning(f"LLM reply: {reply}, updated context: {context}")
+            on_display_response(reply)
         
         # Session end
         on_session_end()
