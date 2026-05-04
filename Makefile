@@ -22,7 +22,7 @@ install:                                  ## Install python dependencies and set
 
 # Cleanup targets
 
-clean:                                    ## Clean temporary and cache files
+clean.server:                             ## Clean temporary and cache files
 	rm -rf .pytest_cache
 	rm -rf .coverage
 	rm -rf htmlcov
@@ -92,3 +92,7 @@ web.install:	                          ## Install web frontend dependencies
 	cd web && $(MAKE) install
 web.build:                                ## Build the web frontend
 	cd web && $(MAKE) build
+
+
+clean: clean.server web.clean
+	@echo "Cleaned server and web frontend"
