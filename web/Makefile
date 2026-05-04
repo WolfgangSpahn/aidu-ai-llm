@@ -9,7 +9,7 @@ install: ## Install frontend dependencies (Vite)
 	@echo "Installing frontend dependencies"
 	npm install
 
-build: build.raw ## Build frontend for production (alias for build.raw)
+build: build.solidjs ## Build frontend for production (alias for build.solidjs)
 
 build.raw: ## Build raw TypeScript variant (main.ts + index.html)
 	@echo "Building raw TypeScript variant"

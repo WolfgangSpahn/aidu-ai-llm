@@ -147,7 +147,7 @@ function App() {
       let sid = sessionId();
       if (!sid) {
         // First message in this browser session: ask backend for a new session ID.
-        const createRes = await fetch("/sessions", {
+        const createRes = await fetch("/sessions", { // create session endpoint
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
