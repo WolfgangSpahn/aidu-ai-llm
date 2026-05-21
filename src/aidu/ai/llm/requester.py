@@ -21,17 +21,14 @@ from rich.console import Console
 from dotenv import load_dotenv
 from rich.rule import Rule
 
-from .client import Context, Trace, clean_message
-from .clients.llm import LLMClient
+from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.config import ChatConfig
+from .client import clean_message
+from .clients.openai import OpenAIClient
 from .prompter import Prompter
 
 logger = logging.getLogger(__name__)
 
-# USD per 1M tokens (input/output)
-MODEL_COSTS_USD_PER_1M = {
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "gpt-4o": {"input": 5.00, "output": 15.00},
-}
 
 class LLMRequester:
     """
@@ -45,7 +42,7 @@ class LLMRequester:
         - Use prompt_args to pass parameters to the template
 
       Example usage:
-            client = LLMClient(api_key)
+            client = OpenAIClient(api_key)
             prompt = "You are a {subject} tutor. Problem: {problem}"
             tools = [...]  # define tools if needed
             agent = LLMRequester(client, prompt_template=prompt, tools=tools)
@@ -120,17 +117,6 @@ class LLMRequester:
         return cleaned
 
     @staticmethod
-    def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens: int) -> float:
-        rates = MODEL_COSTS_USD_PER_1M.get(model or "")
-        if not rates:
-            return 0.0
-
-        return (
-            (prompt_tokens * rates["input"]) +
-            (completion_tokens * rates["output"])
-        ) / 1_000_000
-
-    @staticmethod
     def _resolve_stored_assistant_message(response: dict, duration: float | None = None, timestamp: float | None = None) -> dict:
         """Normalize the assistant response into the stored trace representation."""
         stored_assistant = LLMRequester._clean_message_for_storage(response)
@@ -165,7 +151,7 @@ class LLMRequester:
         )
         return context
 
-    def chat(self, message, context, chat_params=None):
+    def chat(self, message, context, chat_params=None, chat_config: ChatConfig | None = None):
         """
         Run the agent with given message and context.
         - context: Context object with trace of message dicts (role/content)
@@ -179,24 +165,28 @@ class LLMRequester:
         if chat_params:
             context = self.update_system_prompt(context, prompt_params=chat_params)
 
+        # Inject instance-level tools into the per-call config.
+        from dataclasses import replace as dataclass_replace
+        
+        if chat_config:
+            chat_config = dataclass_replace(
+                chat_config,
+                tools=self.tools,
+            )
+        else:
+            chat_config = ChatConfig(
+                tools=self.tools,
+            )
+
         _t0 = time.perf_counter()
-        response = self.client.chat(message, context)
+        response = self.client.chat(message, context, config=chat_config)
         context.control.duration = time.perf_counter() - _t0
 
         prompt_tokens = int(response.get("prompt_tokens", 0) or 0)
         completion_tokens = int(response.get("completion_tokens", 0) or 0)
         total_tokens = int(response.get("total_tokens", 0) or 0)
-        if total_tokens <= 0:
-            total_tokens = prompt_tokens + completion_tokens
+        cost_usd = float(response.get("cost_usd", 0.0) or 0.0)
         model = response.get("model", getattr(self.client, "model", None))
-        cost_usd = self._estimate_cost_usd(model, prompt_tokens, completion_tokens)
-
-        response["prompt_tokens"] = prompt_tokens
-        response["completion_tokens"] = completion_tokens
-        response["total_tokens"] = total_tokens
-        response["cost_usd"] = cost_usd
-        if model is not None:
-            response["model"] = model
 
         context.control.data["usage"] = {
             "model": model,
@@ -260,7 +250,7 @@ def run_smoke_test_fn_call():
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
     # --- setup ---
-    client = LLMClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
+    client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
 
     prompt = """
     You are a {subject} tutor.
@@ -339,7 +329,7 @@ def run_smoke_test_chat(console):
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
-    client = LLMClient("gpt-4o-mini", config={}, api_key=api_key)
+    client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
     agent = LLMRequester(client, prompt_template="You are a helpful assistant.")
 
     context = Context(trace=Trace(messages=agent.build_system_prompt()))

@@ -2,7 +2,7 @@
 title: AIDU LLM Class Inheritance Structure
 ---
 classDiagram
-    class LLMClient {
+    class OpenAIClient {
         -client: OpenAI
         +__init__(api_key)
         +chat(model, messages, tools, response_format)
@@ -33,7 +33,7 @@ classDiagram
     }
 
     class LLMRequester {
-        -client: LLMClient
+        -client: OpenAIClient
         -prompt_builder: PromptBuilder
         -tools: list
         -function_lookup: dict
@@ -56,7 +56,7 @@ classDiagram
     }
 
     %% Relationships
-    LLMRequester --> LLMClient : uses
+    LLMRequester --> OpenAIClient : uses
     LLMRequester --> PromptBuilder : uses
     LLMRequester --> ToolRegistry : manages tools via
     PromptBuilder --> SafeFormat : uses

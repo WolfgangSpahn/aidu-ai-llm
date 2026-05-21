@@ -87,7 +87,7 @@ def run_smoke_test():
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-    from src.aidu.ai.llm.client import LLMClient
+    from src.aidu.ai.llm.clients.openai import OpenAIClient
     import os
     from dotenv import load_dotenv
     
@@ -123,7 +123,7 @@ def run_smoke_test():
         console.print("[red]Error: OPENAI_API_KEY not set[/red]")
         return
     
-    client = LLMClient(api_key=api_key)
+    client = OpenAIClient(api_key=api_key)
     extractor = MathExtractorEvaluator(client=client)
     
     for i, test in enumerate(test_cases, 1):

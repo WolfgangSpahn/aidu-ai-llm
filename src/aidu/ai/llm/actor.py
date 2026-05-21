@@ -19,7 +19,7 @@ from typing import get_origin, get_args
 from pydantic import BaseModel
 
 
-from .client import Context, Message, Trace
+from aidu.ai.core.context import Context, Message, Trace
 from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
@@ -160,6 +160,8 @@ class LLMActor(LLMRequester):
         fnames = tutor.fnames()  # ["solve_problem"]
     """
 
+    capability_specs: dict[str, type | object | None] = {}
+
     @classmethod
     def schema(cls, make_all_required=False, prefix="fc_"):
         """Extracts all function call methods and generates OpenAI function schemas."""
@@ -184,7 +186,7 @@ class LLMActor(LLMRequester):
             if name.startswith(prefix)
         ]
     
-    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
+    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, capability_overrides=None):
         """
         Initialize LLMActor with optional template and argument overrides.
         - If tools is None, automatically generates from schema
@@ -205,6 +207,17 @@ class LLMActor(LLMRequester):
             if name.startswith("fc_"):
                 self._assert_fc_contract(name, func)
                 self.register(name, self._wrap_fc_method(name, func))
+
+        # Store capabilities for use in function calls
+        resolved = {}
+
+        for name, provider in self.capability_specs.items():
+            resolved[name] = provider() if isinstance(provider, type) else provider
+
+        if capability_overrides:
+            resolved.update(capability_overrides)
+
+        self.capabilities = resolved
 
     @staticmethod
     def _assert_fc_contract(name: str, method) -> None:
@@ -267,7 +280,8 @@ class LLMActor(LLMRequester):
 
         reply = message.get("content", "")
         if not reply and message.get("_fc_message"):
-            reply = message.get("_fc_message")
+            fc_msg = message.get("_fc_message")
+            reply = fc_msg.get("content", "") if isinstance(fc_msg, dict) else fc_msg
         if not reply and message.get("function_call"):
             fc = message.get("function_call")
             reply = f"Executing {fc['name']}..."

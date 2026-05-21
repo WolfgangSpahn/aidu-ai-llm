@@ -1,11 +1,4 @@
-# Copyright (c) 2026 Wolfgang Spahn, PHBern
-# Licensed under the MIT License.
-# Please follow standard academic practice when using this software in research or publications.
-# See LICENSE for the full text.
-
-"""
-SymPy-based client that solves mathematical problems locally without an LLM.
-"""
+from aidu.ai.symbolic.engine import Engine
 
 import re
 import json
@@ -16,13 +9,6 @@ from sympy.parsing.sympy_parser import (
     implicit_multiplication_application,
     parse_expr,
     standard_transformations,
-)
-
-from ..client import (
-    ChatConfig,
-    Client,
-    Context,
-    Message,
 )
 
 TRANSFORMATIONS = standard_transformations + (
@@ -214,60 +200,25 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
         }
 
 
-class SymPyClient(Client):
-    """
-    A chat-compatible client that resolves math problems using SymPy.
+class SymbolicSolver(Engine):
 
-    The ``message`` content is passed directly to ``solve_math_problem_with_sympy``.
-    The ``model`` parameter is accepted for interface compatibility but ignored.
+    process = staticmethod(
+        solve_math_problem_with_sympy
+    )
 
-    Supported problem syntaxes:
-    - ``diff(expr, x)``  — derivative
-    - ``solve(expr, x)`` — solve for x
-    - ``lhs = rhs``      — equation
-    - ``expr``           — expression formatting
-    """
+    def chat(
+        self,
+        message,
+        context,
+        config=None,
+    ):
 
-    def __init__(self, model, config, process):
-        super().__init__(model=model, config=config)
-        self.process = process
+        result = self.process(
+            message["content"]
+        )
 
-    def chat(self, message: Message, context: Context, config: ChatConfig | None = None) -> Message:
-        """
-        Solve the math problem contained in *message* and return an assistant message.
-
-        Args:
-            message: A message dict with ``role`` and ``content`` keys.
-                     The ``content`` string is passed to SymPy as the problem.
-            context: Conversation context (not mutated here).
-
-        Returns:
-            A normalized message dict with ``role: "assistant"`` and the
-            SymPy result serialized as JSON in ``content``.
-        """
-        problem = message.get("content", None)
-        assert problem, "SymPyClient requires a 'content' field with the math problem string."
-        
-        result = self.process(problem)
-
-        json_mode = config.json_mode if config and config.json_mode is not None else self.config.get("enforce_json")
-        if json_mode:
-            payload = {
-                "type": result.get("type"),
-                "expression": result.get("expression"),
-                "result": result.get("result"),
-                "latex": result.get("latex"),
-                "message": result.get("message")
-            }
-            content = json.dumps(payload)
-        else:
-            content = result["message"]
-
-            
-        return {
-            "role": "solver",
-            "content": content,
-        }
+        return result, context
+    
 
 
 # ---------------------------------------------------------------------------
@@ -275,12 +226,16 @@ class SymPyClient(Client):
 # ---------------------------------------------------------------------------
 
 def run_smoke_test():
+
     from rich.console import Console
-    from rich.panel import Panel
     from rich.table import Table
 
+    from aidu.ai.core.context import Context
+    from aidu.ai.core.config import ChatConfig
+
     console = Console()
-    client = SymPyClient('sympy', config={}, process=solve_math_problem_with_sympy)
+
+    solver = SymbolicSolver()
 
     problems = [
         "diff(7x^2 + 3x - 5, x)",
@@ -291,19 +246,46 @@ def run_smoke_test():
 
     context = Context()
 
-    console.rule("[bold cyan]SymPyClient Smoke Test[/bold cyan]")
+    console.rule("[bold cyan]SymbolicSolver Smoke Test[/bold cyan]")
 
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("problem", style="yellow")
-    table.add_column("response", style="white")
+    table = Table(
+        show_header=True,
+        header_style="bold cyan",
+    )
+
+    table.add_column(
+        "problem",
+        style="yellow",
+    )
+
+    table.add_column(
+        "response",
+        style="white",
+    )
 
     for problem in problems:
-        message = {"role": "user", "content": problem}
-        response = client.chat(message, context, config=ChatConfig(json_mode=True))
-        table.add_row(problem, response["content"])
+
+        message = {
+            "role": "user",
+            "content": problem,
+        }
+
+        response, context = solver.chat(
+            message=message,
+            context=context,
+            config=ChatConfig(
+                json_mode=True,
+            ),
+        )
+
+        table.add_row(
+            problem,
+            response["message"],
+        )
 
     console.print(table)
 
 
 if __name__ == "__main__":
+
     run_smoke_test()

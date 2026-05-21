@@ -11,8 +11,9 @@ import json
 from rich.console import Console
 
 from ..requester import LLMRequester
-from ..clients.llm import LLMClient
-from ..client import Context, Trace
+from ..clients.openai import OpenAIClient
+from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.config import ChatConfig
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ def smoke_test(client, solver, problem="diff(7x^2 + 3x - 5, x)"):
     response, _ = solver.chat(
         message={"role": "user", "content": problem},
         context=Context(trace=Trace(messages=solver.build_system_prompt())),
+        chat_config=ChatConfig(json_mode=True),
     )
     # we should get a structured response with the solution to the math problem
     # rendering the json in content
@@ -78,7 +80,7 @@ if __name__ == "__main__":
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
-    client = LLMClient("gpt-4o-mini", config={"enforce_json": True}, api_key=api_key)
+    client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
     solver = MathSolver(client=client)
 
     N = 20

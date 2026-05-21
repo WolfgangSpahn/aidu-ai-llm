@@ -60,7 +60,7 @@ def run_smoke_test():
     """Smoke test for UncertaintyEvaluator."""
     from dotenv import load_dotenv
     import os
-    from ..client import LLMClient
+    from ..clients.openai import OpenAIClient
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
@@ -70,7 +70,7 @@ def run_smoke_test():
     assert api_key, "Missing OPENAI_API_KEY in .env"
     
     console = Console()
-    client = LLMClient(api_key)
+    client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
     evaluator = UncertaintyEvaluator(client)
     
     # Test cases with clear field names

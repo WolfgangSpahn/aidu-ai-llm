@@ -12,7 +12,8 @@ import re
 import textwrap
 from pydantic import BaseModel, Field
 
-from aidu.ai.llm.client import Context, Message
+from aidu.ai.symbolic.engines.SymbolicSolver import SymbolicSolver
+from aidu.ai.core.context import Context, Message
 
 from ..actor import LLMActor
 from ..clients.sympy import solve_math_problem_with_sympy
@@ -55,6 +56,10 @@ class MathTutor(LLMActor):
         - Encourage students to think critically and ask questions
         - Be supportive and patient with students who are learning{focus_areas}
         """).strip()
+    
+    capability_specs = {
+        "symbolic_engine": SymbolicSolver,
+    }
 
     def fc_solve_math_problem(self, context: Context, problem: str) -> tuple[Message, Context]:
         """
@@ -70,19 +75,26 @@ class MathTutor(LLMActor):
         """
         try:
             # Call the solver function to handle all types of math problems
-            result = solve_math_problem_with_sympy(problem)
+            engine = self.capabilities.get("symbolic_engine")
+            if not engine:
+                raise ValueError("Symbolic engine not available")
+
+            result, context = engine.chat(
+                {"role": "solver", "content": problem},
+                context=context,
+            )
+
             # Store the full result in context (type, expression, result, latex, message)
             context.state.data["solution"] = result
-            # Extract the natural language message with LaTeX for sending to user
-            message = result['message']
-            # Log the solution for debugging
-            logger.warning(f"Math solution message: {message}")
+            # Wrap the natural language message in a Message dict
+            message = {"role": "assistant", "content": result["message"]}
+            logger.warning(f"Math solution message: {message['content']}")
         except Exception as e:
             # Handle any parsing or math errors gracefully
             context.state.data["solution"] = f"Math input error: {str(e)}"
-            message = f"I couldn't solve that yet. {str(e)}"
-            logger.error(f"Math error: {message}")
-        
+            message = {"role": "assistant", "content": f"I couldn't solve that yet. {str(e)}"}
+            logger.error(f"Math error: {message['content']}")
+
         # Log updated context for tracking conversation history
         logger.warning(f"Context updated in fc_solve_math_problem: {context.state.data}")
         # Return both message (for user) and context (for LLM context)
@@ -101,7 +113,7 @@ class MathTutor(LLMActor):
         # Record the student's name in context to track who completed the exercise
         context.state.data["completed_by"] = student.name
         # Create confirmation message with student info
-        message = f"Student {student.name} (age {student.age}) has completed the exercise."
+        message = {"role": "assistant", "content": f"Student {student.name} (age {student.age}) has completed the exercise."}
         # Log the context update
         logger.warning(f"Context updated in fc_student_completed: {context.state.data}")
         # Return confirmation and updated context
@@ -118,14 +130,14 @@ def run_smoke_test(console):
     from dotenv import load_dotenv
     from rich.rule import Rule
     from rich.markdown import Markdown
-    from ..client import Context, Trace
-    from ..clients.llm import LLMClient
+    from aidu.ai.core.context import Context, Trace
+    from ..clients.openai import OpenAIClient
 
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
-    client = LLMClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
+    client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
     tutor = MathTutor(client)
 
     # Schema generation

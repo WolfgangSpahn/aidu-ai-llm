@@ -3,7 +3,8 @@
 UV=uv
 FIND=find
 MAKE=make
-SRC=aidu.ai.llm
+LLM_SRC=aidu.ai.llm
+SYM_SRC=aidu.ai.symbolic
 APP=app/
 
 .PHONY: help install clean wipe serve run smoke test curl web.build
@@ -49,35 +50,45 @@ app.run:                                   ## Run the analysis application (defa
 # Smoke test targets
 
 smoke.client:                             ## Run a quick smoke test for the client
-	$(UV) run python -m $(SRC).client
+	$(UV) run python -m $(LLM_SRC).client
 
-smoke.client.llm:						  ## Run a quick smoke test for the LLM client	
-	$(UV) run python -m $(SRC).clients.llm
+smoke.clients.openai:						  ## Run a quick smoke test for the LLM client	
+	$(UV) run python -m $(LLM_SRC).clients.openai
+
+smoke.clients.google:						  ## Run a quick smoke test for the Google Gemini client	
+	$(UV) run python -m $(LLM_SRC).clients.google
 
 smoke.client.sympy:					      ## Run a quick smoke test for the SymPy client	
-	$(UV) run python -m $(SRC).clients.sympy
+	$(UV) run python -m $(LLM_SRC).clients.sympy
 
 smoke.requester:                          ## Run a quick smoke test for the requester
-	$(UV) run python -m $(SRC).requester
+	$(UV) run python -m $(LLM_SRC).requester
 
 smoke.actor:                              ## Run a quick smoke test for the actor
-	$(UV) run python -m $(SRC).actor
+	$(UV) run python -m $(LLM_SRC).actor
 
 smoke.actors.mathTutor:                   ## Run a quick smoke test for the math tutor actor
-	$(UV) run python -m $(SRC).actors.mathTutor
+	$(UV) run python -m $(LLM_SRC).actors.mathTutor
 
 smoke.solver.mathSolver:				   ## Run a quick smoke test for the math solver
-	$(UV) run python -m $(SRC).solver.MathSolver
+	$(UV) run python -m $(LLM_SRC).solver.MathSolver
+
+smoke.plugin:								   ## Run a quick smoke test for the plugin
+	$(UV) run python -m $(LLM_SRC).plugin
+
+smoke.engines.symbolicSolver:						   ## Run a quick smoke test for the symbolic solver
+	$(UV) run python -m $(SYM_SRC).engines.SymbolicSolver
 
 smoke:									  ## Run all smoke tests
 	$(MAKE) smoke.client
-	$(MAKE) smoke.client.llm
+	$(MAKE) smoke.clients.openai
+	$(MAKE) smoke.clients.google
 	$(MAKE) smoke.client.sympy
 	$(MAKE) smoke.requester
 	$(MAKE) smoke.actor
 	$(MAKE) smoke.actors.mathTutor
 	$(MAKE) smoke.solver.mathSolver
-
+	$(MAKE) smoke.plugin
 # Testing targets
 	
 test:                                     ## Run all tests
@@ -97,6 +108,10 @@ web.install:	                          ## Install web frontend dependencies
 web.build:                                ## Build the web frontend
 	cd web && $(MAKE) build
 
+jupyter:        ## Start a jupyter notebook server
+	@if [ ! -d ".venv" ]; then uv venv; fi
+	uv pip install jupyter
+	uv run jupyter lab
 
 clean: server.clean web.clean
 	@echo "Cleaned server and web frontend"

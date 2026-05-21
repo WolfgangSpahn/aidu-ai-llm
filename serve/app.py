@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from rich.logging import RichHandler
 from rich.console import Console
 
-from aidu.ai.llm.clients.llm import LLMClient
+from aidu.ai.llm.clients.openai import OpenAIClient
 from aidu.ai.llm.actors.mathTutor import MathTutor
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
 from aidu.ai.llm.client import Context, Trace, State
@@ -119,7 +119,7 @@ def _get_or_raise(session_id: str) -> Context:
     return _sessions[session_id]
 
 
-def _make_client() -> LLMClient:
+def _make_client() -> OpenAIClient:
     """
     Create and return an LLMClient instance with the configured model and API key.
     """
@@ -129,7 +129,7 @@ def _make_client() -> LLMClient:
         logger.error("✗ OPENAI_API_KEY not configured")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
     logger.debug("OpenAI client created")
-    return LLMClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
+    return OpenAIClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
 
 
 def _make_actor(actor_name: str = DEFAULT_ACTOR):
@@ -264,6 +264,7 @@ def chat(
     except Exception as e:
         logger.error(f"✗ Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get(

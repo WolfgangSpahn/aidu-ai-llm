@@ -13,7 +13,7 @@ Prompter encapsulates all system-prompt handling:
 import os
 
 from .builder import PromptBuilder
-from .client import Context
+from aidu.ai.core.context import Context
 from .safeformat import SafeFormat
 
 

@@ -1,29 +1,45 @@
 flowchart LR
 
     subgraph Agent Layer
-        A[LLMAgent]
+        R[LLMRequester]
+        A[LLMActor]
+        T[MathTutor]
+        S[MathSolver]
     end
 
     subgraph Prompt Layer
+        P[Prompter]
         B[PromptBuilder]
-        C[SafeFormat]
+        F[SafeFormat]
     end
 
-    subgraph LLM Layer
-        D[LLMClient]
-        E[OpenAI API]
+    subgraph Client Layer
+        C[Client]
+        O[OpenAIClient]
+        G[GoogleClient]
+        Y[SymPyClient]
     end
 
-    subgraph Tool Layer
-        F[ToolRegistry]
-        G[User Functions]
+    subgraph External Services
+        OA[OpenAI API]
+        GA[Google Gemini API]
+        SY["SymPy Engine Local"]
     end
 
-    A --> B
-    B --> C
+    T -. inherits .-> A
+    A -. inherits .-> R
+    S -. inherits .-> R
 
-    A --> D
-    D --> E
+    O -. implements .-> C
+    G -. implements .-> C
+    Y -. implements .-> C
 
-    A --> F
-    F --> G
+    R --> P
+    P --> B
+    B --> F
+
+    R --> C
+
+    O --> OA
+    G --> GA
+    Y --> SY

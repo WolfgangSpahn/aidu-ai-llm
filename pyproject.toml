@@ -6,10 +6,13 @@ readme = "README.md"
 requires-python = ">=3.11,<3.15"
 
 dependencies = [
+    "aidu-support", # Local package for shared utilities
+
     "rich==14.3.2",
     "pydantic>=2.0",
     "python-dotenv>=0.19.0,<1.0.0",
     "openai>=1.0.0,<2.0.0",
+    "google-genai>=0.3.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "sympy>=1.11.0,<2.0.0",
@@ -23,6 +26,9 @@ dev = [
     "pluggy>=1.0",
 ]
 
+[project.entry-points."aidu"]
+llm = "aidu.ai.llm.plugin:plugin"
+
 # Build system configuration using Hatchling tools
 [build-system]
 requires = ["hatchling"]
@@ -30,4 +36,16 @@ build-backend = "hatchling.build"
 
 # Package everything under src/aidu into the wheel
 [tool.hatch.build.targets.wheel]
-packages = ["src/aidu"]
+sources = { "src" = "" }
+packages = [
+    "src/aidu/ai/core",
+    "src/aidu/ai/llm",
+    "src/aidu/ai/symbolic",
+]
+
+# -------------------------------------------------------------------
+# Local workspace sources
+# -------------------------------------------------------------------
+
+[tool.uv.sources]
+aidu-support = { path = "../aidu-support", editable = true }
