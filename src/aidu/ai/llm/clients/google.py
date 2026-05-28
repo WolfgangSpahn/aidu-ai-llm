@@ -6,7 +6,7 @@
 """
 Google Gemini LLM client implementation.
 """
-
+import logging
 import os
 import json
 import re
@@ -20,6 +20,10 @@ from rich.table import Table
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import ChatConfig
 from ..client import Client, clean_message
+
+from aidu.support.filesystem.search import find_up
+
+logger = logging.getLogger(__name__)
 
 MODEL_COSTS_USD_PER_1M = {
     # Gemini 2.5 generation
@@ -201,7 +205,9 @@ class GoogleClient(Client):
 def run_smoke_test_chat():
     console = Console()
 
-    load_dotenv(".env")
+    env_path = find_up(".env")
+    logger.info("Loading environment variables from %s", env_path)
+    load_dotenv(env_path)
 
     api_key = os.getenv("GOOGLE_API_KEY")
     assert api_key, "Missing GOOGLE_API_KEY in .env"
@@ -266,7 +272,9 @@ def run_smoke_test_enforce_json():
     """Test the enforce_json configuration to ensure JSON responses are properly handled."""
     console = Console()
 
-    load_dotenv(".env")
+    env_path = find_up(".env")
+    logger.info("Loading environment variables from %s", env_path)
+    load_dotenv(env_path)
 
     api_key = os.getenv("GOOGLE_API_KEY")
     assert api_key, "Missing GOOGLE_API_KEY in .env"
@@ -327,7 +335,9 @@ def run_smoke_test_math_solver():
     """Test json_mode with a deterministic math solver prompt."""
     console = Console()
 
-    load_dotenv(".env")
+    env_path = find_up(".env")
+    logger.info("Loading environment variables from %s", env_path)
+    load_dotenv(env_path)
 
     api_key = os.getenv("GOOGLE_API_KEY")
     assert api_key, "Missing GOOGLE_API_KEY in .env"
@@ -403,6 +413,16 @@ def run_smoke_test_math_solver():
 
 
 if __name__ == "__main__":
+
+    from rich.logging import RichHandler
+
+    console = Console()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        handlers=[RichHandler(console=console)],
+    )
+
     # run_smoke_test_chat()
     # print("\n" + "="*80 + "\n")
     # run_smoke_test_enforce_json()

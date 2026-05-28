@@ -5,7 +5,7 @@
 #
 
 """
-LLMActor extends LLMRequester with automatic schema generation for function calls.
+LLMAgent extends LLMRequester with automatic schema generation for function calls.
 
 Methods prefixed with 'fc_' are automatically discovered and converted to OpenAI function schemas.
 Supports Google-style docstrings for parameter descriptions and Pydantic models for complex types.
@@ -20,7 +20,9 @@ from pydantic import BaseModel
 
 
 from aidu.ai.core.context import Context, Message, Trace
+from aidu.ai.core.agent_result import AgentResult
 from .requester import LLMRequester
+
 
 logger = logging.getLogger(__name__)
 
@@ -110,20 +112,20 @@ def get_openai_function_schema(func, make_all_required=False):
     }
 
 
-class LLMActor(LLMRequester):
+class LLMAgent(LLMRequester):
     """
-    LLMActor extends LLMRequester with automatic schema generation for function calls.
+    LLMAgent extends LLMRequester with automatic schema generation for function calls.
     
     Methods prefixed with 'fc_' are automatically discovered and converted to OpenAI function schemas.
     Supports Google-style docstrings for parameter descriptions and Pydantic models for complex types.
     
     Prompting pattern (inherited from LLMRequester):
     - Define class-level system_prompt for fixed prompts:
-      class MyTutor(LLMActor):
+      class MyTutor(LLMAgent):
           system_prompt = "You are a math tutor."
     
     - Or define class-level prompt_template for templated prompts with {placeholders}:
-      class MyTutor(LLMActor):
+      class MyTutor(LLMAgent):
           prompt_template = "You are a {subject} tutor."
     
     - Use prompt_args in __init__ to fill placeholders (supports SafeFormat):
@@ -134,7 +136,7 @@ class LLMActor(LLMRequester):
       tutor = MyTutor(client, prompt_template="Override template", prompt_args={...})
     
     Example usage:
-        class MyTutor(LLMActor):
+        class MyTutor(LLMAgent):
             system_prompt = "You are a {subject} tutor{level}."
             
             def fc_solve_problem(self, context: Context, problem: str) -> tuple[Message, Context]:
@@ -188,7 +190,7 @@ class LLMActor(LLMRequester):
     
     def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, capability_overrides=None):
         """
-        Initialize LLMActor with optional template and argument overrides.
+        Initialize LLMAgent with optional template and argument overrides.
         - If tools is None, automatically generates from schema
         - Inherits prompt_template from class variable if not overridden
         - Supports prompt_args to parameterize the template
@@ -332,5 +334,9 @@ class LLMActor(LLMRequester):
         
         return context
 
-
+    def run(
+        self,
+        context: Context,
+    ) -> AgentResult:
+        raise NotImplementedError
 

@@ -58,7 +58,7 @@ smoke.clients.openai:						  ## Run a quick smoke test for the LLM client
 smoke.clients.google:						  ## Run a quick smoke test for the Google Gemini client	
 	$(UV) run python -m $(LLM_SRC).clients.google
 
-smoke.client.sympy:					      ## Run a quick smoke test for the SymPy client	
+smoke.clients.sympy:					      ## Run a quick smoke test for the SymPy client	
 	$(UV) run python -m $(LLM_SRC).clients.sympy
 
 smoke.requester:                          ## Run a quick smoke test for the requester
@@ -67,8 +67,8 @@ smoke.requester:                          ## Run a quick smoke test for the requ
 smoke.actor:                              ## Run a quick smoke test for the actor
 	$(UV) run python -m $(LLM_SRC).actor
 
-smoke.actors.mathTutor:                   ## Run a quick smoke test for the math tutor actor
-	$(UV) run python -m $(LLM_SRC).actors.mathTutor
+smoke.agents.mathTutor:                   ## Run a quick smoke test for the math tutor agent
+	$(UV) run python -m $(LLM_SRC).agents.mathTutor
 
 smoke.solver.mathSolver:				   ## Run a quick smoke test for the math solver
 	$(UV) run python -m $(LLM_SRC).solver.MathSolver
@@ -80,13 +80,11 @@ smoke.engines.symbolicSolver:						   ## Run a quick smoke test for the symbolic
 	$(UV) run python -m $(SYM_SRC).engines.SymbolicSolver
 
 smoke:									  ## Run all smoke tests
-	$(MAKE) smoke.client
 	$(MAKE) smoke.clients.openai
 	$(MAKE) smoke.clients.google
-	$(MAKE) smoke.client.sympy
+	$(MAKE) smoke.clients.sympy
 	$(MAKE) smoke.requester
-	$(MAKE) smoke.actor
-	$(MAKE) smoke.actors.mathTutor
+	$(MAKE) smoke.agents.mathTutor
 	$(MAKE) smoke.solver.mathSolver
 	$(MAKE) smoke.plugin
 # Testing targets

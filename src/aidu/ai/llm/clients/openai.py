@@ -7,6 +7,7 @@
 OpenAI LLM client implementation.
 """
 
+import logging
 import os
 import json
 
@@ -16,9 +17,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import ChatConfig
 from ..client import Client, clean_message
+
+logger = logging.getLogger(__name__)
 
 # USD per 1M tokens (input/output)
 MODEL_COSTS_USD_PER_1M = {
@@ -120,10 +124,12 @@ class OpenAIClient(Client):
 # --------------------------------------------------------------------------------------------------------------
 # smoke test - basic chat
 
-def run_smoke_test_chat():
-    console = Console()
+def run_smoke_test_chat(console):
 
-    load_dotenv("./.env")
+    env_path = find_up(".env")
+    logger.info("Loading environment variables from %s", env_path)
+    load_dotenv(env_path)
+
 
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "Missing OPENAI_API_KEY in .env"
@@ -170,5 +176,14 @@ def run_smoke_test_chat():
 
 
 if __name__ == "__main__":
-    run_smoke_test_chat()
+    from rich.logging import RichHandler
+
+    console = Console()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        handlers=[RichHandler(console=console)],
+    )
+
+    run_smoke_test_chat(console)
 

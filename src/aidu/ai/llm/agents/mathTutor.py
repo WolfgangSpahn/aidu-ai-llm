@@ -14,8 +14,12 @@ from pydantic import BaseModel, Field
 
 from aidu.ai.symbolic.engines.SymbolicSolver import SymbolicSolver
 from aidu.ai.core.context import Context, Message
+from aidu.ai.core.agent_result import AgentResult
+from aidu.ai.core.artifacts import SymbolicArtifact, EvidenceArtifact
+from aidu.ai.core.protocols import CognitiveAgentProtocol
+from aidu.ai.core.recommendation import Recommendation
 
-from ..actor import LLMActor
+from ..agent import LLMAgent
 from ..clients.sympy import solve_math_problem_with_sympy
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ class StudentInfo(BaseModel):
     name: str = Field(..., description="Student's full name")
     age: int = Field(..., description="Student's age")
 
-class MathTutor(LLMActor):
+class MathTutor(LLMAgent):
     """A math tutor agent with function calls for solving problems and tracking student progress."""
 
     # System prompt with flexible placeholders that can be filled via prompt_args
@@ -99,7 +103,8 @@ class MathTutor(LLMActor):
         logger.warning(f"Context updated in fc_solve_math_problem: {context.state.data}")
         # Return both message (for user) and context (for LLM context)
         return message, context
-
+    
+ 
     def fc_student_completed(self, context: Context, student: StudentInfo) -> tuple[Message, Context]:
         """
         Mark that a student has completed an exercise.
@@ -118,6 +123,8 @@ class MathTutor(LLMActor):
         logger.warning(f"Context updated in fc_student_completed: {context.state.data}")
         # Return confirmation and updated context
         return message, context
+
+
 
 
 # ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -187,6 +194,181 @@ def run_smoke_test(console):
 
     print("\n✅ MathTutor smoke test passed!")
 
+
+    def run_smoke_test_new(console):
+        """Smoke test for MathTutor demonstrating schema generation, AgentResult generation and interactive chat."""
+
+        import os
+        import textwrap
+
+        from dotenv import load_dotenv
+        from rich.rule import Rule
+        from rich.markdown import Markdown
+        from rich.panel import Panel
+        from rich.pretty import Pretty
+
+        from aidu.ai.core.context import Context, Trace
+        from aidu.ai.core.agent_result import AgentResult
+
+        from ..clients.openai import OpenAIClient
+
+        load_dotenv()
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        assert api_key, "Missing OPENAI_API_KEY in .env"
+
+        client = OpenAIClient(
+            "gpt-4o-mini",
+            config={},
+            api_key=api_key,
+        )
+
+        tutor = MathTutor(client)
+
+        # --------------------------------------------------------------
+        # Schema generation
+        # --------------------------------------------------------------
+
+        console.print(Rule("MathTutor Schema Generation Test"))
+
+        schemas = MathTutor.schema()
+        fnames = MathTutor.fnames()
+
+        console.print(f"\nDiscovered functions: {fnames}")
+        console.print(f"Generated schemas: {len(schemas)} function(s)")
+
+        assert len(schemas) == 2
+        assert schemas[0]["type"] == "function"
+        assert "parameters" in schemas[0]["function"]
+
+        console.print("[green]✓ Schema generation verified[/green]\n")
+
+        # --------------------------------------------------------------
+        # AgentResult generation
+        # --------------------------------------------------------------
+
+        console.print(Rule("MathTutor AgentResult Test"))
+
+        context = Context()
+
+        result = tutor.fc_solve_math_problem(
+            context=context,
+            problem="diff(7*x**2 + 3*x - 5, x)",
+        )
+
+        assert isinstance(result, AgentResult)
+
+        console.print(
+            Panel.fit(
+                Pretty(result),
+                title="Solve Problem Result",
+                border_style="green",
+            )
+        )
+
+        assert len(result.artifacts) > 0
+        assert len(result.recommendations) > 0
+
+        console.print(
+            f"[green]✓ Produced {len(result.artifacts)} artifact(s)[/green]"
+        )
+
+        console.print(
+            f"[green]✓ Produced {len(result.recommendations)} recommendation(s)[/green]"
+        )
+
+        completion_result = tutor.fc_student_completed(
+            context=context,
+            student=StudentInfo(
+                name="Alice",
+                age=15,
+            ),
+        )
+
+        assert isinstance(completion_result, AgentResult)
+
+        console.print(
+            Panel.fit(
+                Pretty(completion_result),
+                title="Completion Result",
+                border_style="yellow",
+            )
+        )
+
+        assert len(completion_result.artifacts) > 0
+        assert len(completion_result.recommendations) > 0
+
+        console.print("[green]✓ AgentResult generation verified[/green]\n")
+
+        # --------------------------------------------------------------
+        # Interactive chat
+        # --------------------------------------------------------------
+
+        turn_count = [0]
+
+        def header():
+            console.print(Rule("Math Tutor Chat"))
+
+        def get_input():
+
+            turn_count[0] += 1
+
+            if turn_count[0] == 1:
+                text = (
+                    "What is the derivative of 7x^2 + 3x - 5? "
+                    "Just the result, no explanation yet."
+                )
+
+            elif turn_count[0] == 2:
+                text = "Can you explain how?"
+
+            else:
+                return None
+
+            indented = textwrap.indent(text, "  ")
+
+            console.print(f"[yellow][user>[/]")
+            console.print(indented)
+
+            return text
+
+        def display_response(text):
+
+            console.print("[cyan][tutor>[/]")
+
+            if text:
+                console.print(Markdown(text))
+
+        def on_end():
+
+            console.print(
+                "\n[green]✓ Session Complete[/green]"
+            )
+
+        context = tutor.interactive_chat(
+            context=Context(
+                trace=Trace(
+                    messages=tutor.build_system_prompt()
+                )
+            ),
+            on_display_header=header,
+            on_get_user_input=get_input,
+            on_display_response=display_response,
+            on_session_end=on_end,
+        )
+
+        console.print()
+        console.print(
+            Panel.fit(
+                Pretty(context),
+                title="Final Context",
+                border_style="blue",
+            )
+        )
+
+        console.print(
+            "\n[bold green]✓ MathTutor smoke test passed[/bold green]"
+        )
 
 if __name__ == "__main__":
     from rich.logging import RichHandler

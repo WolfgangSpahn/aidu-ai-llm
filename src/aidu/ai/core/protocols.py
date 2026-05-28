@@ -6,7 +6,7 @@ from typing import Protocol, Any
 
 from aidu.ai.core.context import Context
 from aidu.ai.core.config import ChatConfig
-
+from aidu.ai.core.agent_result import AgentResult
 
 class ClientProtocol(Protocol):
 
@@ -46,4 +46,13 @@ class ChatAgentProtocol(Protocol):
         """
         Process a conversational turn.
         """
+        ...
+
+
+class CognitiveAgentProtocol(Protocol):
+
+    def run(
+        self,
+        context: Context,
+    ) -> AgentResult:
         ...
