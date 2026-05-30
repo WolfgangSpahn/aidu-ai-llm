@@ -31,7 +31,7 @@ from rich.logging import RichHandler
 from rich.console import Console
 
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.actors.mathTutor import MathTutor
+from aidu.ai.llm.agents.mathTutor import MathTutor
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
 from aidu.ai.llm.client import Context, Trace, State
 

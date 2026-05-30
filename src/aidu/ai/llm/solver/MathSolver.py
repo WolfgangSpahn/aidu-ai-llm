@@ -13,7 +13,7 @@ from rich.console import Console
 from ..requester import LLMRequester
 from ..clients.openai import OpenAIClient
 from aidu.ai.core.context import Context, Trace
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 
 
 logger = logging.getLogger(__name__)
@@ -35,10 +35,10 @@ class MathSolver(LLMRequester):
 def smoke_test(client, solver, problem="diff(7x^2 + 3x - 5, x)"):
     """Run a simple smoke test to verify the MathSolver works end-to-end."""
 
-    response, _ = solver.chat(
+    response, _ = solver.ask(
         message={"role": "user", "content": problem},
         context=Context(trace=Trace(messages=solver.build_system_prompt())),
-        chat_config=ChatConfig(json_mode=True),
+        ask_config=AskConfig(json_mode=True),
     )
     # we should get a structured response with the solution to the math problem
     # rendering the json in content

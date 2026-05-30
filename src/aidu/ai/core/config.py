@@ -7,7 +7,7 @@ from typing import Any
 
 
 @dataclass
-class ChatConfig:
+class AskConfig:
 
     # Response behavior
     json_mode: bool = False

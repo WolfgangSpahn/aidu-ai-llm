@@ -83,7 +83,7 @@ class MathTutor(LLMAgent):
             if not engine:
                 raise ValueError("Symbolic engine not available")
 
-            result, context = engine.chat(
+            result, context = engine.ask(
                 {"role": "solver", "content": problem},
                 context=context,
             )
@@ -92,7 +92,7 @@ class MathTutor(LLMAgent):
             context.state.data["solution"] = result
             # Wrap the natural language message in a Message dict
             message = {"role": "assistant", "content": result["message"]}
-            logger.warning(f"Math solution message: {message['content']}")
+            logger.info(f"Math solution message: {message['content']}")
         except Exception as e:
             # Handle any parsing or math errors gracefully
             context.state.data["solution"] = f"Math input error: {str(e)}"
@@ -100,7 +100,7 @@ class MathTutor(LLMAgent):
             logger.error(f"Math error: {message['content']}")
 
         # Log updated context for tracking conversation history
-        logger.warning(f"Context updated in fc_solve_math_problem: {context.state.data}")
+        logger.info(f"Context updated in fc_solve_math_problem: {context.state.data}")
         # Return both message (for user) and context (for LLM context)
         return message, context
     
@@ -120,7 +120,7 @@ class MathTutor(LLMAgent):
         # Create confirmation message with student info
         message = {"role": "assistant", "content": f"Student {student.name} (age {student.age}) has completed the exercise."}
         # Log the context update
-        logger.warning(f"Context updated in fc_student_completed: {context.state.data}")
+        logger.info(f"Context updated in fc_student_completed: {context.state.data}")
         # Return confirmation and updated context
         return message, context
 
@@ -190,6 +190,7 @@ def run_smoke_test(console):
         on_get_user_input=get_input,
         on_display_response=display_response,
         on_session_end=on_end,
+        console=console,
     )
 
     print("\n✅ MathTutor smoke test passed!")
@@ -211,8 +212,11 @@ def run_smoke_test(console):
         from aidu.ai.core.agent_result import AgentResult
 
         from ..clients.openai import OpenAIClient
+        from aidu.support.filesystem.search import find_up
 
-        load_dotenv()
+        env_path = find_up(".env")
+        logger.info("Loading environment variables from %s", env_path) 
+        load_dotenv(env_path)
 
         api_key = os.getenv("OPENAI_API_KEY")
         assert api_key, "Missing OPENAI_API_KEY in .env"
@@ -355,20 +359,21 @@ def run_smoke_test(console):
             on_get_user_input=get_input,
             on_display_response=display_response,
             on_session_end=on_end,
+            console=console,
         )
 
-        console.print()
-        console.print(
-            Panel.fit(
-                Pretty(context),
-                title="Final Context",
-                border_style="blue",
-            )
-        )
+        # console.print()
+        # console.print(
+        #     Panel.fit(
+        #         Pretty(context),
+        #         title="Final Context",
+        #         border_style="blue",
+        #     )
+        # )
 
-        console.print(
-            "\n[bold green]✓ MathTutor smoke test passed[/bold green]"
-        )
+        # console.print(
+        #     "\n[bold green]✓ MathTutor smoke test passed[/bold green]"
+        # )
 
 if __name__ == "__main__":
     from rich.logging import RichHandler

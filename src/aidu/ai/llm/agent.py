@@ -271,14 +271,39 @@ class LLMAgent(LLMRequester):
             cleaned["function_call"] = msg["function_call"]
         return cleaned
 
-    def chat_turn(self, context: Context, user_message: dict) -> tuple[str, Context]:
+    def chat_turn(self, user_message: dict, context: Context) -> tuple[str, Context]:
         """
-        Run a full user turn: call model, resolve reply text, and persist turn in context trace.
+        Execute a complete conversational turn.
 
-        Returns:
-            tuple[str, Context]: (reply_text, updated_context)
+        This method:
+
+        1. Sends the user message to the model.
+        2. Extracts a user-visible reply.
+        3. Stores both user message and model response in the conversation trace.
+        4. Returns the reply text and updated context.
+
+        Parameters
+        ----------
+        user_message:
+            User message for the current turn.
+
+        context:
+            Conversation context.
+
+        Returns
+        -------
+        tuple[str, Context]
+            The reply text and the updated context.
+
+        Notes
+        -----
+        If the model requests a function call, a placeholder reply such as
+        ``Executing <function>...`` may be returned instead of assistant text.
+
+        Unlike ``chat()``, this method always persists the turn into the
+        conversation history.
         """
-        message, context = self.chat(message=user_message, context=context)
+        message, context = self.ask(message=user_message, context=context)
 
         reply = message.get("content", "")
         if not reply and message.get("_fc_message"):
@@ -298,7 +323,7 @@ class LLMAgent(LLMRequester):
 
     def interactive_chat(self, context,
                         on_display_header, on_get_user_input,
-                        on_session_end, on_display_response):
+                        on_session_end, on_display_response, console=None):
         """
         Run an interactive chat session with I/O handlers.
         
@@ -325,8 +350,8 @@ class LLMAgent(LLMRequester):
                 continue
             
             user_message = {"role": "user", "content": user_text}
-            reply, context = self.chat_turn(context=context, user_message=user_message)
-            logger.warning(f"LLM reply: {reply}, updated context: {context}")
+            reply, context = self.chat_turn(user_message=user_message, context=context)
+            # logger.debug(f"LLM reply: {reply}, updated context: {context.pretty(console)}")
             on_display_response(reply)
         
         # Session end

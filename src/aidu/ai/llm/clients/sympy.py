@@ -19,7 +19,7 @@ from sympy.parsing.sympy_parser import (
 )
 
 from ..client import (
-    ChatConfig,
+    AskConfig,
     Client,
     Context,
     Message,
@@ -232,7 +232,7 @@ class SymPyClient(Client):
         super().__init__(model=model, config=config)
         self.process = process
 
-    def chat(self, message: Message, context: Context, config: ChatConfig | None = None) -> Message:
+    def ask(self, message: Message, context: Context, config: AskConfig | None = None) -> Message:
         """
         Solve the math problem contained in *message* and return an assistant message.
 
@@ -299,7 +299,7 @@ def run_smoke_test():
 
     for problem in problems:
         message = {"role": "user", "content": problem}
-        response = client.chat(message, context, config=ChatConfig(json_mode=True))
+        response = client.ask(message, context, config=AskConfig(json_mode=True))
         table.add_row(problem, response["content"])
 
     console.print(table)

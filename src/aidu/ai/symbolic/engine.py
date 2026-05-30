@@ -7,13 +7,13 @@ from aidu.ai.core.context import (
     Message,
 )
 
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 
 
 class Engine(ABC):
 
     @abstractmethod
-    def chat(
+    def ask(
         self,
         message,
         context,

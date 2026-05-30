@@ -19,7 +19,7 @@ from rich.table import Table
 
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Trace
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 from ..client import Client, clean_message
 
 logger = logging.getLogger(__name__)
@@ -70,11 +70,72 @@ def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens:
 
 
 class OpenAIClient(Client):
-    def __init__(self, model, config, api_key):
+    def __init__(self, model=None, config={}, api_key=None):
+
+        if model == None:
+            logger.warning("No model specified for OpenAIClient, defaulting to gpt-4o-mini")
+            model = "gpt-4o-mini"
+
+        if api_key is None:
+            env_path = find_up(".env")
+            logger.warning("No API key provided, loading environment variables from %s", env_path) 
+            load_dotenv(env_path)
+            api_key = os.getenv("OPENAI_API_KEY")
+            assert api_key, "Missing OPENAI_API_KEY in .env"
+
         super().__init__(model=model, config=config)
         self.client = OpenAI(api_key=api_key)
 
-    def chat(self, message, context, config: ChatConfig | None = None):
+    def ask(self, message, context, config: AskConfig | None = None):
+        """
+        Send a message to the LLM and return the assistant response.
+
+        Parameters
+        ----------
+        message:
+            New user, assistant, tool, or system message to append to the
+            conversation for this request.
+
+        context:
+            Conversation context containing the trace of previous messages.
+            The trace is read but not modified.
+
+        config:
+            Optional per-request configuration. May override JSON mode,
+            available tools, and tool selection behavior.
+
+        Returns
+        -------
+        Message
+            Normalized assistant message.
+
+            The returned message may contain:
+
+            - ``content``: assistant text response
+            - ``function_call``: normalized function call request
+            - ``tool_calls``: provider-native tool call data
+            - token usage information:
+                - ``prompt_tokens``
+                - ``completion_tokens``
+                - ``total_tokens``
+                - ``cost_usd``
+            - ``model``: model identifier used for the request
+
+        Behavior
+        --------
+        - Sends ``context.trace.messages + [message]`` to the model.
+        - Optionally enables tool calling.
+        - Optionally enables JSON response mode.
+        - Normalizes provider-specific responses into a common message format.
+        - Converts the first tool call into a legacy ``function_call`` field.
+        - Adds token usage and estimated cost information when available.
+
+        Notes
+        -----
+        This method does not modify ``context``.
+        Tool calls are not executed automatically; they are returned to the
+        caller for handling.
+        """
         json_mode = config.json_mode if config else self.config.get("enforce_json", False)
         response_format = {"type": "json_object"} if json_mode else None
 
@@ -122,9 +183,9 @@ class OpenAIClient(Client):
 
 
 # --------------------------------------------------------------------------------------------------------------
-# smoke test - basic chat
+# smoke test - basic ask
 
-def run_smoke_test_chat(console):
+def run_smoke_test_ask(console):
 
     env_path = find_up(".env")
     logger.info("Loading environment variables from %s", env_path)
@@ -146,7 +207,7 @@ def run_smoke_test_chat(console):
     console.rule("System Prompt")
     console.print(Panel(system_prompt, expand=False))
 
-    response = client.chat(
+    response = client.ask(
         message=message,
         context=context,
     )
@@ -185,5 +246,5 @@ if __name__ == "__main__":
         handlers=[RichHandler(console=console)],
     )
 
-    run_smoke_test_chat(console)
+    run_smoke_test_ask(console)
 

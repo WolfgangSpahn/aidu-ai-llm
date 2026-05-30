@@ -61,7 +61,7 @@ def _normalize_problem(problem: str) -> str:
     return normalized
 
 
-def _parse_math(expr_str: str):
+def parse_math(expr_str: str):
     """Parse a math expression and raise a user-facing error on failure."""
     prepared = _preprocess(expr_str)
 
@@ -69,8 +69,8 @@ def _parse_math(expr_str: str):
         return parse_expr(prepared, transformations=TRANSFORMATIONS)
     except Exception as exc:
         raise ValueError(
-            "I couldn't parse that math expression. Use forms like '4x^3', "
-            "'diff(4x^3, x)', or '2x + 3 = 7'."
+            f"I couldn't parse that math expression '{expr_str}'. Use forms like '4x^3', "
+            f"'diff(4x^3, x)', or '2x + 3 = 7'."
         ) from exc
 
 def solve_math_problem_with_sympy(problem: str) -> dict:
@@ -107,7 +107,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Create symbolic variable for differentiation
             var = symbols(var_name)
             # Parse string into SymPy expression (e.g., "7x^2" -> mathematical object)
-            expr = _parse_math(expr_str)
+            expr = parse_math(expr_str)
             # Calculate derivative: d/dx of expr
             result = diff(expr, var)
             # Convert to LaTeX format and remove spaces for clean output
@@ -135,7 +135,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Create symbolic variable
             var = symbols(var_name)
             # Parse expression string into SymPy object
-            expr = _parse_math(expr_str)
+            expr = parse_math(expr_str)
             # Keep coefficients exact so symbolic roots (e.g., sqrt(3)) are preserved.
             expr = nsimplify(expr, rational=True)
             # Solve: find all values of 'var' that make expr = 0
@@ -162,8 +162,8 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
         # Split at = sign to get left and right sides
         lhs, rhs = problem.split('=')
         # Rearrange to standard form: lhs - rhs = 0 for solving
-        lhs_expr = _parse_math(lhs.strip())
-        rhs_expr = _parse_math(rhs.strip())
+        lhs_expr = parse_math(lhs.strip())
+        rhs_expr = parse_math(rhs.strip())
         expr = lhs_expr - rhs_expr
         # Solve the rearranged equation
         solutions = solve(expr, x)
@@ -185,7 +185,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
     # CASE 4: Expression formatting (no operation, just format the math)
     else:
         # Parse and format the expression without solving anything
-        expr = _parse_math(problem)
+        expr = parse_math(problem)
         # Convert to LaTeX, removing spaces
         expr_latex = latex(expr).replace(' ', '')
         # Create description message with SymPy attribution
@@ -206,7 +206,7 @@ class SymbolicSolver(Engine):
         solve_math_problem_with_sympy
     )
 
-    def chat(
+    def ask(
         self,
         message,
         context,
@@ -231,7 +231,7 @@ def run_smoke_test():
     from rich.table import Table
 
     from aidu.ai.core.context import Context
-    from aidu.ai.core.config import ChatConfig
+    from aidu.ai.core.config import AskConfig
 
     console = Console()
 
@@ -273,7 +273,7 @@ def run_smoke_test():
         response, context = solver.chat(
             message=message,
             context=context,
-            config=ChatConfig(
+            config=AskConfig(
                 json_mode=True,
             ),
         )

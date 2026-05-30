@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from rich.rule import Rule
 
 from aidu.ai.core.context import Context, Trace
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 from .client import clean_message
 from .clients.openai import OpenAIClient
 from .prompter import Prompter
@@ -151,35 +151,58 @@ class LLMRequester:
         )
         return context
 
-    def chat(self, message, context, chat_params=None, chat_config: ChatConfig | None = None):
+    def ask(self, message, context, ask_params=None, ask_config: AskConfig | None = None):
         """
-        Run the agent with given message and context.
-        - context: Context object with trace of message dicts (role/content)
-        - message: current input message dict (role/content)
-        - chat_params: optional dict for dynamic prompt updates (e.g. {"subject": "math", "problem": "2 + 3"})
+        Execute a single LLM request.
 
-        Function calls must return (message, context).
-        Returned msg dict will contain _fc_message key if a function was called.
-        This method does not append messages to context.trace; callers own storage.
+        The supplied message is sent together with the current conversation
+        trace from the context. The model response is normalized into the
+        framework message format.
+
+        Parameters
+        ----------
+        message:
+            Message to send to the model.
+
+        context:
+            Current conversation context.
+
+        config:
+            Optional per-request configuration.
+
+        Returns
+        -------
+        tuple[Message, Context]
+            The normalized model response and the updated context.
+
+        Notes
+        -----
+        The returned message may contain text content, a function call,
+        or provider-specific metadata.
+
+        The returned context may be updated by the implementation
+        (for example token accounting, internal state, or trace updates).
+
+        Function calls are returned but not executed automatically.
         """
-        if chat_params:
-            context = self.update_system_prompt(context, prompt_params=chat_params)
+        if ask_params:
+            context = self.update_system_prompt(context, prompt_params=ask_params)
 
         # Inject instance-level tools into the per-call config.
         from dataclasses import replace as dataclass_replace
         
-        if chat_config:
-            chat_config = dataclass_replace(
-                chat_config,
+        if ask_config:
+            ask_config = dataclass_replace(
+                ask_config,
                 tools=self.tools,
             )
         else:
-            chat_config = ChatConfig(
+            ask_config = AskConfig(
                 tools=self.tools,
             )
 
         _t0 = time.perf_counter()
-        response = self.client.chat(message, context, config=chat_config)
+        response = self.client.ask(message, context, config=ask_config)
         context.control.duration = time.perf_counter() - _t0
 
         prompt_tokens = int(response.get("prompt_tokens", 0) or 0)
@@ -198,6 +221,7 @@ class LLMRequester:
 
         fc = response.get("function_call")
         if fc:
+            logger.info(f"LLM requests function call: {fc['name']}({fc['arguments']})")
             fn = self.function_lookup.get(fc["name"])
             args = json.loads(fc["arguments"])
 
@@ -220,10 +244,10 @@ class LLMRequester:
             if run_params
             else context
         )
-        response, effective_context = self.chat(
+        response, effective_context = self.ask(
             message=message,
             context=effective_context,
-            chat_params=None,
+            ask_params=None,
         )
 
         effective_context = self.store_turn(
@@ -296,7 +320,7 @@ def run_smoke_test_fn_call():
     context = Context(trace=Trace(messages=system_messages))
 
     # run the agent
-    message, context = agent.chat(
+    message, context = agent.ask(
         message=user_messages[0],
         context=context,
     )
@@ -323,7 +347,7 @@ def run_smoke_test_fn_call():
 # smoke test - basic chat (no tool call)
 
 
-def run_smoke_test_chat(console):
+def run_smoke_test_ask(console):
     load_dotenv()
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -382,4 +406,4 @@ if __name__ == "__main__":
     logger.info("Run smoke tests...")
 
     # run_smoke_test_fn_call()
-    run_smoke_test_chat(console)
+    run_smoke_test_ask(console)

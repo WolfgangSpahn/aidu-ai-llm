@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from aidu.ai.core.context import Context, Trace
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 from ..client import Client, clean_message
 
 from aidu.support.filesystem.search import find_up
@@ -78,7 +78,7 @@ class GoogleClient(Client):
                 gemini_tools.append(gemini_tool)
         return gemini_tools if gemini_tools else None
 
-    def chat(self, message, context, config: ChatConfig | None = None):
+    def ask(self, message, context, config: AskConfig | None = None):
         """
         Send a message to Gemini and get a response.
         
@@ -200,9 +200,9 @@ class GoogleClient(Client):
 
 
 # --------------------------------------------------------------------------------------------------------------
-# smoke test - basic chat
+# smoke test - basic ask
 
-def run_smoke_test_chat():
+def run_smoke_test_ask():
     console = Console()
 
     env_path = find_up(".env")
@@ -226,7 +226,7 @@ def run_smoke_test_chat():
 
     # Try to call the API; if quota is exceeded, use a mock response
     try:
-        response = client.chat(
+        response = client.ask(
             message=message,
             context=context,
         )
@@ -292,10 +292,10 @@ def run_smoke_test_enforce_json():
 
     # Try to call the API; if quota is exceeded, use a mock response
     try:
-        response = client.chat(
+        response = client.ask(
             message=message,
             context=context,
-            config=ChatConfig(json_mode=True),
+            config=AskConfig(json_mode=True),
         )
     except Exception as exc:
         console.print(f"[yellow]Warning: Could not reach Gemini API: {type(exc).__name__}[/yellow]")
@@ -362,10 +362,10 @@ def run_smoke_test_math_solver():
 
     # Try to call the API; if quota is exceeded, use a mock response
     try:
-        response = client.chat(
+        response = client.ask(
             message=message,
             context=context,
-            config=ChatConfig(json_mode=True),
+            config=AskConfig(json_mode=True),
         )
     except Exception as exc:
         console.print(f"[yellow]Warning: Could not reach Gemini API: {type(exc).__name__}[/yellow]")
@@ -423,7 +423,7 @@ if __name__ == "__main__":
         handlers=[RichHandler(console=console)],
     )
 
-    # run_smoke_test_chat()
+    # run_smoke_test_ask()
     # print("\n" + "="*80 + "\n")
     # run_smoke_test_enforce_json()
     # print("\n" + "="*80 + "\n")

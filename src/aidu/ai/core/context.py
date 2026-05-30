@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.pretty import Pretty
+from rich.text import Text
+from rich import box
+
 from pydantic import BaseModel, Field
 from typing import Any
 
@@ -26,6 +32,58 @@ class Trace(BaseModel):
         default_factory=list,
         description="List of messages exchanged in the conversation so far.",
     )
+    def pretty(self):
+        """Return a Group of Rich Panels, one per message.
+
+        Each panel's title is the message `role`. The panel body focuses on
+        `function_call` if present, otherwise `content`. Any other keys are
+        shown in the panel subtitle (footer).
+        """
+        panels: list[Panel] = []
+        for msg in self.messages:
+            role = msg.get("role", "message")
+
+            # Prefer function_call over content for the main display
+            main_renderable = None
+            if "function_call" in msg and msg["function_call"] is not None:
+                main_renderable = Pretty(msg["function_call"])
+            else:
+                content = msg.get("content")
+                if isinstance(content, str):
+                    main_renderable = Text(content)
+                else:
+                    main_renderable = Pretty(content)
+
+            # Footer: show any remaining fields (excluding role, content, function_call)
+            footer_kv = {k: v for k, v in msg.items() if k not in ("role", "content", "function_call")}
+            subtitle = None
+            if footer_kv:
+                try:
+                    subtitle = ", ".join(f"{k}={v}" for k, v in footer_kv.items())
+                except Exception:
+                    subtitle = str(footer_kv)
+
+            panels.append(
+                Panel(
+                    main_renderable,
+                    title=str(role),
+                    subtitle=subtitle or "",
+                    border_style="cyan",
+                    box=box.ROUNDED,
+                    padding=(1, 1),
+                    expand=True,
+                )
+            )
+
+        # Wrap all message panels in an outer Trace panel
+        return Panel(
+            Group(*panels),
+            title="Trace",
+            border_style="cyan",
+            box=box.ROUNDED,
+            padding=(0, 0),
+            expand=True,
+        )
 
 class State(BaseModel):
     """Mutable state that can be updated and shared across turns."""
@@ -33,6 +91,9 @@ class State(BaseModel):
     data: dict[str, Any] = Field(
         default_factory=dict,
    )
+    def pretty(self) -> Panel:
+        """Return a Rich Panel renderable for the state."""
+        return Panel(Pretty(self.data), title="State", border_style="magenta", expand=True)
 
 class Control(BaseModel):
     """Control information for execution and flow decisions."""
@@ -45,6 +106,10 @@ class Control(BaseModel):
         default=0.0,
         description="Duration of the last chat request in seconds.",
     )
+    def pretty(self) -> Panel:
+        """Return a Rich Panel renderable for control information (includes duration)."""
+        control_display = {**self.data, "duration": f"{self.duration:.2f} s"}
+        return Panel(Pretty(control_display), title="Control", border_style="yellow", expand=True)
 
 class Context(BaseModel):
     """Typed runtime context carrying history, mutable state, and control data."""
@@ -66,10 +131,17 @@ class Context(BaseModel):
         default_factory=dict
     )
 
+    def pretty(self,console: Console):
+        """Pretty-print the context using Rich panels for a boxed view."""
 
-# -------------------------------------------------------------------
-# Smoke Test
-# -------------------------------------------------------------------
+        console.print(self.trace.pretty())
+        console.print(self.state.pretty())
+        console.print(self.control.pretty())
+
+        # Artifacts: render a panel containing a mapping of id -> artifact.pretty() output
+        # For compactness, display artifacts as a dict of id -> model_dump() inside a panel
+        artifacts_dump = {k: v.model_dump() for k, v in self.artifacts.items()}
+        console.print(Panel.fit(Pretty(artifacts_dump), title="Artifacts", border_style="green"))
 
 # -------------------------------------------------------------------
 # Smoke Test

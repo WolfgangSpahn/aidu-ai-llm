@@ -59,6 +59,7 @@ source = { editable = "../aidu-support" }
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "ruff", specifier = ">=0.5.0" },
 ]

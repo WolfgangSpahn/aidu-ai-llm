@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol, Any
 
 from aidu.ai.core.context import Context
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 from aidu.ai.core.agent_result import AgentResult
 
 class ClientProtocol(Protocol):
@@ -16,7 +16,7 @@ class ClientProtocol(Protocol):
         self,
         message: dict[str, Any],
         context: Context,
-        config: ChatConfig | None = None,
+        config: AskConfig | None = None,
     ) -> dict[str, Any]:
         """
         Execute a chat completion against the provider.

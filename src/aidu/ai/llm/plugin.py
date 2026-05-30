@@ -6,7 +6,7 @@ import os
 import pluggy
 from .clients.openai import OpenAIClient
 from aidu.ai.core.context import Context, Trace, State, Control
-from aidu.ai.core.config import ChatConfig
+from aidu.ai.core.config import AskConfig
 import asyncio
 import pluggy
 
@@ -83,7 +83,7 @@ async def _smoke_test():
             response, context = agent.chat(
                 message=message,
                 context=context,
-                chat_config=ChatConfig(json_mode=issubclass(agent_cls, MathSolver)),
+                chat_config=AskConfig(json_mode=issubclass(agent_cls, MathSolver)),
             )
 
             print(response)
