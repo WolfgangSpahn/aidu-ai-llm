@@ -32,6 +32,8 @@ class Trace(BaseModel):
         default_factory=list,
         description="List of messages exchanged in the conversation so far.",
     )
+    def __str__(self):
+        return "\n".join(f"{m.get('role')}: '{m.get('content', '')[:10]+"..." if m.get('content') and len(m.get('content', '')) > 10 else ''}'" for m in self.messages)
     def pretty(self):
         """Return a Group of Rich Panels, one per message.
 
@@ -130,6 +132,9 @@ class Context(BaseModel):
     artifacts: dict[str, Artifact] = Field(
         default_factory=dict
     )
+
+    def __str__(self):
+        return f"Context(trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
 
     def pretty(self,console: Console):
         """Pretty-print the context using Rich panels for a boxed view."""

@@ -12,6 +12,12 @@ from aidu.ai.core.config import AskConfig
 
 class Engine(ABC):
 
+    def build_system_prompt(self, **kwargs) -> list[Message]:
+        """
+        Build initial system messages.
+        """
+        return [{"role": "system", "content": "Symbolic math engine"}]
+
     @abstractmethod
     def ask(
         self,

@@ -185,6 +185,15 @@ class LLMRequester:
 
         Function calls are returned but not executed automatically.
         """
+
+        # assure that the first message in the trace is always the system prompt, 
+        if not context.trace.messages or context.trace.messages[0]["role"] != "system":
+            logger.error("Context trace must start with a system message. Please build and prepend the system prompt to the trace before calling ask().")
+            raise ValueError("Context trace must start with a system message.")
+         
+         
+        # and update it with current params if needed
+
         if ask_params:
             context = self.update_system_prompt(context, prompt_params=ask_params)
 

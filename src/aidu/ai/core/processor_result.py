@@ -6,7 +6,7 @@ from aidu.ai.core.artifacts import Artifact
 from aidu.ai.core.recommendation import Recommendation
 
 
-class AgentResult(BaseModel):
+class ProcessorResult(BaseModel):
 
     artifacts: list[Artifact] = Field(
         default_factory=list

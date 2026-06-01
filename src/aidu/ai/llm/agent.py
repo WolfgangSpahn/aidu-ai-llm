@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 
 from aidu.ai.core.context import Context, Message, Trace
-from aidu.ai.core.agent_result import AgentResult
+from aidu.ai.core.processor_result import ProcessorResult
 from .requester import LLMRequester
 
 
@@ -362,6 +362,6 @@ class LLMAgent(LLMRequester):
     def run(
         self,
         context: Context,
-    ) -> AgentResult:
+    ) -> ProcessorResult:
         raise NotImplementedError
 

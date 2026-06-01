@@ -147,6 +147,7 @@ class OpenAIClient(Client):
         tools = config.tools if config else None
         if tools:
             kwargs["tools"] = tools
+            logger.debug(f"Tools {tools} enabled for this request.")
             if config.tool_choice:
                 kwargs["tool_choice"] = config.tool_choice
 

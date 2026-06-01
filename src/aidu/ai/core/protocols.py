@@ -6,7 +6,7 @@ from typing import Protocol, Any
 
 from aidu.ai.core.context import Context
 from aidu.ai.core.config import AskConfig
-from aidu.ai.core.agent_result import AgentResult
+from aidu.ai.core.processor_result import ProcessorResult
 
 class ClientProtocol(Protocol):
 
@@ -54,5 +54,5 @@ class CognitiveAgentProtocol(Protocol):
     def run(
         self,
         context: Context,
-    ) -> AgentResult:
+    ) -> ProcessorResult:
         ...
