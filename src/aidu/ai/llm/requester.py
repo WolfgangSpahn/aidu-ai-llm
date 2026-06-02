@@ -14,6 +14,7 @@ import os
 import json
 import logging
 import time
+from uuid import uuid4
 
 from rich.logging import RichHandler
 from rich.console import Console
@@ -54,6 +55,8 @@ class LLMRequester:
             message, context = agent.run(message=user_messages[0], context=context)
     """
     # Class-level prompt template (optional - can be overridden in subclasses)
+    role            = "assistant"
+    target          = None
     prompt_template = None
     
     def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
@@ -64,7 +67,7 @@ class LLMRequester:
             client: LLM client instance
             prompt_template: Override the class-level prompt_template (can be string or file path)
             prompt_args: Dict of arguments to pass to the prompt template via .format()
-            tools: List of OpenAI tool definitions (auto-generated in LLMActor if None)
+            tools: List of OpenAI tool (function call) definitions (auto-generated in LLMActor if None)
         """
         self.client = client
         self.tools = tools or []
@@ -228,6 +231,8 @@ class LLMRequester:
             "cost_usd": cost_usd,
         }
 
+        # we got a function call request from the LLM, let's call the registered function and update the context accordingly, then attach the 
+        # function result to the response for potential use in the next turn or by the caller.
         fc = response.get("function_call")
         if fc:
             logger.info(f"LLM requests function call: {fc['name']}({fc['arguments']})")
@@ -240,8 +245,46 @@ class LLMRequester:
                     f"Function call '{fc['name']}' must return (message, context)"
                 )
                 fc_message, context = result
-                response["_fc_message"] = fc_message
+                response["_fc_message"] = fc_message.get("content", "")
+                if ask_config and ask_config.route_mode:
+                    logger.debug("Route mode enabled - attaching function call result to response content for routing.")
+                    message = {
+                        "role": self.role,
+                        "type": "route",
+                        "content": fc_message.get("content", "")
+                    }
+                    response.update(message)
+                    return response, context
 
+
+
+
+        if ask_config and ask_config.route_mode:
+            logger.debug("Route mode enabled - returning response with route content if present.")
+            message = {
+                "role": self.role,
+                "type": "route",
+                "content": {
+                    "artifacts": [
+                        {
+                            "id": str(uuid4()),
+                            "type": "text",
+                            "producer": self.id,
+                            "step": context.step,
+                            "content": json.dumps(response.get("_fc_message", response.get("content", ""))),
+                        }],
+                    "recommendations": [
+                        {
+                            "target": self.target or "next_agent",
+                            "utility": 1.0,
+                            "rationale": "symbolic computation requested",
+                        }
+                    ]
+                    },
+                }
+            response.update(message)
+            return response, context
+            
         return response, context
     
     def talk(self, message, context, run_params=None):

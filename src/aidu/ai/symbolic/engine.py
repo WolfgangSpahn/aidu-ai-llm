@@ -11,6 +11,7 @@ from aidu.ai.core.config import AskConfig
 
 
 class Engine(ABC):
+    role: str = "engine"
 
     def build_system_prompt(self, **kwargs) -> list[Message]:
         """

@@ -26,6 +26,8 @@ class Prompter:
     - Template file:   Prompter(prompt_template="/path/to/prompt.txt")
     """
 
+    role = "system" 
+
     def __init__(self, prompt_template=None, prompt_args=None):
         """
         Args:
@@ -52,7 +54,7 @@ class Prompter:
             prompt_params: Extra values merged on top of prompt_args (take precedence).
 
         Returns:
-            [{"role": "system", "content": "..."}] or [] when no prompt is configured.
+            [{"role": self.role, "content": "..."}] or [] when no prompt is configured.
         """
         merged = {**self.prompt_args, **(prompt_params or {})}
 
@@ -60,7 +62,7 @@ class Prompter:
             return []
 
         content = self.prompt_builder.build(prompt_params=merged or None)
-        return [{"role": "system", "content": content}]
+        return [{"role": self.role, "content": content}]
 
     def update_system_prompt(self, context: Context, prompt_params=None) -> Context:
         """
@@ -71,7 +73,7 @@ class Prompter:
             context: Current conversation context.
             prompt_params: Extra values merged on top of prompt_args (take precedence).
         """
-        if not context.trace.messages or context.trace.messages[0]["role"] != "system":
+        if not context.trace.messages or context.trace.messages[0]["role"] != self.role:
             return context
 
         new_system = self.build_system_prompt(prompt_params)

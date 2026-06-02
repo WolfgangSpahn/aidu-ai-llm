@@ -12,6 +12,9 @@ class AskConfig:
     # Response behavior
     json_mode: bool = False
 
+    # Returns route message style
+    route_mode: bool = False
+
     # Sampling
     temperature: float | None = None
     max_tokens: int | None = None

@@ -32,8 +32,10 @@ class Trace(BaseModel):
         default_factory=list,
         description="List of messages exchanged in the conversation so far.",
     )
+    def __init__(self, messages=None):
+        super().__init__(messages=messages or [])
     def __str__(self):
-        return "\n".join(f"{m.get('role')}: '{m.get('content', '')[:10]+"..." if m.get('content') and len(m.get('content', '')) > 10 else ''}'" for m in self.messages)
+        return "messages:" + "len=" + str(len(self.messages))
     def pretty(self):
         """Return a Group of Rich Panels, one per message.
 
@@ -93,6 +95,12 @@ class State(BaseModel):
     data: dict[str, Any] = Field(
         default_factory=dict,
    )
+    
+    def __init__(self, data=None):
+        super().__init__(data=data or {})
+
+    def __str__(self):
+        return str(self.data)
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for the state."""
         return Panel(Pretty(self.data), title="State", border_style="magenta", expand=True)
@@ -108,6 +116,14 @@ class Control(BaseModel):
         default=0.0,
         description="Duration of the last chat request in seconds.",
     )
+
+    def __init__(self, data=None, duration=0.0):
+        super().__init__(data=data or {}, duration=duration)
+
+    def __str__(self):
+        control_display = {**self.data, "duration": f"{self.duration:.2f} s"}
+        return str(control_display)
+    
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for control information (includes duration)."""
         control_display = {**self.data, "duration": f"{self.duration:.2f} s"}
@@ -115,6 +131,8 @@ class Control(BaseModel):
 
 class Context(BaseModel):
     """Typed runtime context carrying history, mutable state, and control data."""
+
+    step: int = 0
 
     trace: Trace = Field(
         default_factory=Trace,
@@ -133,8 +151,18 @@ class Context(BaseModel):
         default_factory=dict
     )
 
+    def __init__(self):
+        super().__init__(
+            step=0,
+            trace=Trace(),
+            state=State(),
+            control=Control(),
+            artifacts=dict(),
+        )
+
+
     def __str__(self):
-        return f"Context(trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
+        return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
 
     def pretty(self,console: Console):
         """Pretty-print the context using Rich panels for a boxed view."""

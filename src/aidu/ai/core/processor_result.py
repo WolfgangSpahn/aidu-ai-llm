@@ -15,3 +15,7 @@ class ProcessorResult(BaseModel):
     recommendations: list[Recommendation] = Field(
         default_factory=list
     )
+
+    def __str__(self) -> str:
+        return f"ProcessorResult(artifacts={self.artifacts}, recommendations={self.recommendations})"
+
