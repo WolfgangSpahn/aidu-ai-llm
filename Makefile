@@ -1,6 +1,6 @@
 PACKAGE=aidu-ai-llm
 
-EXAMPLE= app
+EXAMPLE= aidu.ai.llm.demo.app
 
 SMOKE_MODULES=\
 	aidu.ai.llm.client \
