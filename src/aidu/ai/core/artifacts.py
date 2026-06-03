@@ -1,6 +1,6 @@
 # src/aidu/ai/core/artifacts.py
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Any
 from rich.panel import Panel
 from rich.pretty import Pretty
@@ -10,13 +10,11 @@ from rich import box
 
 
 class Artifact(BaseModel):
-
     id: str
     producer: str
     type: str
     step: int
     content: Any = None
-
 
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for this artifact.
@@ -38,6 +36,7 @@ class Artifact(BaseModel):
             expand=True,
         )
 
+
 class TextArtifact(Artifact):
     type: str = "text"
     content: str
@@ -56,6 +55,7 @@ class EvidenceArtifact(Artifact):
 class BeliefArtifact(Artifact):
     type: str = "belief"
     content: dict[str, Any]
+
 
 class ErrorArtifact(Artifact):
     type: str = "error"

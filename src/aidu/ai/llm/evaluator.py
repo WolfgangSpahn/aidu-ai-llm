@@ -17,34 +17,24 @@ from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
 
+
 class Evaluator(LLMRequester):
     """
     Evaluates the last student turn and returns a distribution over a Likert scale.
-    
-    The Likert scale has 5 points, and the evaluator returns a normalized probability 
+
+    The Likert scale has 5 points, and the evaluator returns a normalized probability
     distribution across these points.
-    
+
     Subclass and define prompt_template to create specific evaluators.
     See evaluators/ subdirectory for concrete implementations.
     """
 
     prompt_template = None
-    likert_labels = [
-        "Very likely",
-        "Likely", 
-        "Neutral",
-        "Not likely",
-        "Not at all"
-    ]
+    likert_labels = ["Very likely", "Likely", "Neutral", "Not likely", "Not at all"]
 
     def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
         """Initialize evaluator with optional prompt template and arguments."""
-        super().__init__(
-            client=client,
-            prompt_template=prompt_template,
-            prompt_args=prompt_args,
-            tools=tools
-        )
+        super().__init__(client=client, prompt_template=prompt_template, prompt_args=prompt_args, tools=tools)
 
     @staticmethod
     def _parse_json_response(response_text: str) -> dict:
@@ -67,16 +57,15 @@ class Evaluator(LLMRequester):
             chat_config=chat_config,
         )
 
-
     def evaluate(self, user_prompt="", eval_params: dict = None, enforce_json: bool = True) -> list[float] | None:
         """
         Evaluate using the provided parameters on a Likert scale.
-        
+
         Args:
             user_prompt (str): User message to trigger evaluation
             eval_params (dict): Parameters for evaluation (structure defined by subclasses)
             enforce_json (bool): If True, enforce JSON response format (default True)
-            
+
         Returns:
             list[float]: Probability distribution over 5 Likert points, or None on error
         """
@@ -91,20 +80,20 @@ class Evaluator(LLMRequester):
                 eval_params=eval_params,
                 chat_config=chat_config,
             )
-            
+
             response_text = message.get("content", "")
             result = self._parse_json_response(response_text)
-            
+
             distribution = result.get("distribution")
             if not distribution or len(distribution) != 5:
                 logger.error(f"Invalid distribution: {distribution}")
                 return None
-            
+
             # Normalize to probability distribution (sum to 1)
             total = sum(distribution)
             if total > 0:
                 distribution = [x / total for x in distribution]
-            
+
             logger.info(f"Evaluator distribution: {distribution}")
             return distribution
 
@@ -115,6 +104,3 @@ class Evaluator(LLMRequester):
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
             return None
-
-
-

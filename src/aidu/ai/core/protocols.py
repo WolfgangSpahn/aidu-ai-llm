@@ -8,8 +8,8 @@ from aidu.ai.core.context import Context
 from aidu.ai.core.config import AskConfig
 from aidu.ai.core.processor_result import ProcessorResult
 
-class ClientProtocol(Protocol):
 
+class ClientProtocol(Protocol):
     model: str
 
     def chat(
@@ -25,7 +25,6 @@ class ClientProtocol(Protocol):
 
 
 class ChatAgentProtocol(Protocol):
-
     client: ClientProtocol
 
     def build_system_prompt(
@@ -50,9 +49,7 @@ class ChatAgentProtocol(Protocol):
 
 
 class CognitiveAgentProtocol(Protocol):
-
     def run(
         self,
         context: Context,
-    ) -> ProcessorResult:
-        ...
+    ) -> ProcessorResult: ...

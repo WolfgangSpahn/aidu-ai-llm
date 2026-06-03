@@ -7,15 +7,9 @@ from aidu.ai.core.recommendation import Recommendation
 
 
 class ProcessorResult(BaseModel):
+    artifacts: list[Artifact] = Field(default_factory=list)
 
-    artifacts: list[Artifact] = Field(
-        default_factory=list
-    )
-
-    recommendations: list[Recommendation] = Field(
-        default_factory=list
-    )
+    recommendations: list[Recommendation] = Field(default_factory=list)
 
     def __str__(self) -> str:
         return f"ProcessorResult(artifacts={self.artifacts}, recommendations={self.recommendations})"
-

@@ -114,3 +114,8 @@ cython_debug/
 venv/
 ENV/
 env/
+
+# web demo
+node_modules/
+web/node_modules/
+

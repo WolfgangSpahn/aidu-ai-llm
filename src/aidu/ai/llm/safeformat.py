@@ -4,21 +4,24 @@
 # See LICENSE for the full text.
 
 """
-    Helper class for safe string formatting with format_map that handles missing keys gracefully.
-    Returns formatted placeholder instead of raising KeyError for undefined variables.
+Helper class for safe string formatting with format_map that handles missing keys gracefully.
+Returns formatted placeholder instead of raising KeyError for undefined variables.
 """
+
 
 class SafeFormat(dict):
     """This is a helper class to allow for the use of format_map with missing keys
-    
-        Use it like this:
-        >>> safe_format = SafeFormat()
-        >>> safe_format["key"] = "value"
-        >>> print(safe_format["key"])          # Output: value
-        >>> print(safe_format["missing_key"])  # Output: {missing_key}
+
+    Use it like this:
+    >>> safe_format = SafeFormat()
+    >>> safe_format["key"] = "value"
+    >>> print(safe_format["key"])          # Output: value
+    >>> print(safe_format["missing_key"])  # Output: {missing_key}
     """
+
     def __missing__(self, key: str):
         return "{" + key + "}"
+
 
 if __name__ == "__main__":
     # Create a SafeFormat object

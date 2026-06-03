@@ -5,13 +5,10 @@ from typing import Any
 
 
 class Recommendation(BaseModel):
-
     target: str
 
     utility: float = 0.0
 
     rationale: str = ""
 
-    metadata: dict[str, Any] = Field(
-        default_factory=dict
-    )
+    metadata: dict[str, Any] = Field(default_factory=dict)

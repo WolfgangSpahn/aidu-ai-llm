@@ -7,7 +7,19 @@ with:
 - a FastAPI chat backend in `serve/app.py`
 - a minimal Vite frontend in `web/`
 
-## Prerequisites
+## Quick Example
+
+```bash
+pip install aidu-ai-llm aidu-support
+```
+
+then run the example app:
+
+```bash
+aidu-llm-example
+```
+
+## Development Prerequisites
 
 The following tools are required to build and run the project:
 

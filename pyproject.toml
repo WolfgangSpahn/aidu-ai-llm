@@ -1,51 +1,64 @@
 [project]
 name = "aidu-ai-llm"
 version = "0.1.0"
-description = "A Python package for AIDu's LLM interface."
+description = "LLM abstraction layer for the AIDu ecosystem."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 
 dependencies = [
-    "aidu-support", # Local package for shared utilities
+    "aidu-support",
 
-    "rich==14.3.2",
     "pydantic>=2.0",
+    "rich>=14.3.2",
+
     "python-dotenv>=0.19.0,<1.0.0",
+
     "openai>=1.0.0,<2.0.0",
     "google-genai>=0.3.0",
+
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
-    "sympy>=1.11.0,<2.0.0",
+
     "requests>=2.31.0",
+    "sympy>=1.11.0",
 ]
 
-# Optional dependencies for development and testing
 [dependency-groups]
 dev = [
     "pytest>=7.0",
     "pluggy>=1.0",
+    "ruff",
+    "black",
 ]
+
+[project.scripts]
+aidu-ai-llm-example = "aidu.ai.llm.demo.app:main"
 
 [project.entry-points."aidu"]
 llm = "aidu.ai.llm.plugin:plugin"
 
-# Build system configuration using Hatchling tools
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Package everything under src/aidu into the wheel
 [tool.hatch.build.targets.wheel]
 sources = { "src" = "" }
 packages = [
-    "src/aidu/ai/core",
     "src/aidu/ai/llm",
-    "src/aidu/ai/symbolic",
 ]
 
-# -------------------------------------------------------------------
-# Local workspace sources
-# -------------------------------------------------------------------
+[tool.hatch.build]
+include = [
+    "src/aidu/ai/llm/demo/web/**",
+]
 
 [tool.uv.sources]
 aidu-support = { path = "../aidu-support", editable = true }
+
+[tool.ruff]
+line-length = 180
+exclude = ["__pycache__", "build", "dist", ".venv", "web/node_modules"]
+
+[tool.black]
+line-length = 180
+target-version = ["py311"]

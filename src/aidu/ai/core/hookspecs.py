@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import pluggy
 
-
 hookspec = pluggy.HookspecMarker("aidu")
 hookimpl = pluggy.HookimplMarker("aidu")
 
 
 class HookSpecs:
-
     @hookspec
     def get_agents(self):
         """

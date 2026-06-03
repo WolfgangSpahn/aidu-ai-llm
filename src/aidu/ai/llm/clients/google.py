@@ -6,6 +6,7 @@
 """
 Google Gemini LLM client implementation.
 """
+
 import logging
 import os
 import json
@@ -27,30 +28,26 @@ logger = logging.getLogger(__name__)
 
 MODEL_COSTS_USD_PER_1M = {
     # Gemini 2.5 generation
-    "gemini-2.5-pro":             {"input": 1.25,  "output": 10.00},
-    "gemini-2.5-flash":           {"input": 0.30,  "output": 2.50},
-    "gemini-2.5-flash-lite":      {"input": 0.10,  "output": 0.40},
-
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+    "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
     # Gemini 2.0 generation
-    "gemini-2.0-flash":           {"input": 0.10,  "output": 0.40},
-    "gemini-2.0-flash-001":       {"input": 0.10,  "output": 0.40},
-    "gemini-2.0-flash-lite":      {"input": 0.075, "output": 0.30},
-    "gemini-2.0-flash-lite-001":  {"input": 0.075, "output": 0.30},
-
+    "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
+    "gemini-2.0-flash-001": {"input": 0.10, "output": 0.40},
+    "gemini-2.0-flash-lite": {"input": 0.075, "output": 0.30},
+    "gemini-2.0-flash-lite-001": {"input": 0.075, "output": 0.30},
     # Aliases and rolling endpoints
-    "gemini-flash-latest":        {"input": 0.10,  "output": 0.40},
-    "gemini-flash-lite-latest":   {"input": 0.075, "output": 0.30},
-    "gemini-pro-latest":          {"input": 1.25,  "output": 10.00},
+    "gemini-flash-latest": {"input": 0.10, "output": 0.40},
+    "gemini-flash-lite-latest": {"input": 0.075, "output": 0.30},
+    "gemini-pro-latest": {"input": 1.25, "output": 10.00},
 }
+
 
 def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens: int) -> float:
     rates = MODEL_COSTS_USD_PER_1M.get(model or "")
     if not rates:
         return 0.0
-    return (
-        (prompt_tokens * rates["input"]) +
-        (completion_tokens * rates["output"])
-    ) / 1_000_000
+    return ((prompt_tokens * rates["input"]) + (completion_tokens * rates["output"])) / 1_000_000
 
 
 class GoogleClient(Client):
@@ -62,7 +59,7 @@ class GoogleClient(Client):
         """Convert OpenAI tool format to Gemini tool format."""
         if not tools:
             return None
-        
+
         gemini_tools = []
         for tool in tools:
             if tool.get("type") == "function":
@@ -73,7 +70,7 @@ class GoogleClient(Client):
                         "name": func.get("name"),
                         "description": func.get("description"),
                         "parameters": func.get("parameters", {}),
-                    }
+                    },
                 }
                 gemini_tools.append(gemini_tool)
         return gemini_tools if gemini_tools else None
@@ -81,11 +78,11 @@ class GoogleClient(Client):
     def ask(self, message, context, config: AskConfig | None = None):
         """
         Send a message to Gemini and get a response.
-        
+
         Args:
             message: Message dict with 'role' and 'content' keys
             context: Context object with trace of messages
-            
+
         Returns:
             Message dict with role, content, token counts, and cost
         """
@@ -115,7 +112,7 @@ class GoogleClient(Client):
             contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
         current_role = "user" if message.get("role") == "user" else "model"
         contents.append({"role": current_role, "parts": [{"text": message.get("content", "")}]})
-        
+
         # Send message and get response
         try:
             response = self.client.models.generate_content(
@@ -129,9 +126,9 @@ class GoogleClient(Client):
         # Extract response content
         response_text = response.text if response.text else ""
         if json_mode:
-            #text is typpicallly a ``json ...`` block, but could also be direct JSON or even non-JSON if the model didn't follow instructions. Normalize it.
+            # text is typpicallly a ``json ...`` block, but could also be direct JSON or even non-JSON if the model didn't follow instructions. Normalize it.
             response_text = self._normalize_json_text(response_text)
-        
+
         # Build response dict matching OpenAI format
         result = {
             "role": "assistant",
@@ -139,12 +136,12 @@ class GoogleClient(Client):
         }
 
         # Extract token usage information if available
-        if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
+        if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
             usage = response.usage_metadata
-            prompt_tokens = usage.prompt_token_count if hasattr(usage, 'prompt_token_count') else 0
-            completion_tokens = usage.candidates_token_count if hasattr(usage, 'candidates_token_count') else 0
-            total_tokens = usage.total_token_count if hasattr(usage, 'total_token_count') else (prompt_tokens + completion_tokens)
-            
+            prompt_tokens = usage.prompt_token_count if hasattr(usage, "prompt_token_count") else 0
+            completion_tokens = usage.candidates_token_count if hasattr(usage, "candidates_token_count") else 0
+            total_tokens = usage.total_token_count if hasattr(usage, "total_token_count") else (prompt_tokens + completion_tokens)
+
             result["prompt_tokens"] = prompt_tokens
             result["completion_tokens"] = completion_tokens
             result["total_tokens"] = total_tokens
@@ -202,6 +199,7 @@ class GoogleClient(Client):
 # --------------------------------------------------------------------------------------------------------------
 # smoke test - basic ask
 
+
 def run_smoke_test_ask():
     console = Console()
 
@@ -215,9 +213,13 @@ def run_smoke_test_ask():
     smoke_model = "gemini-2.5-flash-lite"
     client = GoogleClient(smoke_model, config={}, api_key=api_key)
 
-    context = Context(trace=Trace(messages=[
-        {"role": "system", "content": "You are a helpful assistant and meeting Henry. Address Henry by his name"},
-    ]))
+    context = Context(
+        trace=Trace(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant and meeting Henry. Address Henry by his name"},
+            ]
+        )
+    )
     message = {"role": "user", "content": "Hi you."}
 
     system_prompt = context.trace.messages[0]["content"]
@@ -282,9 +284,13 @@ def run_smoke_test_enforce_json():
     smoke_model = "gemini-2.5-flash-lite"
     client = GoogleClient(smoke_model, config={}, api_key=api_key)
 
-    context = Context(trace=Trace(messages=[
-        {"role": "system", "content": "You are a helpful assistant. Respond with valid JSON only."},
-    ]))
+    context = Context(
+        trace=Trace(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant. Respond with valid JSON only."},
+            ]
+        )
+    )
     message = {"role": "user", "content": "Return a JSON object with fields 'name' and 'age' for a person named Alice aged 30."}
 
     console.rule("Testing enforce_json Configuration")
@@ -352,9 +358,13 @@ def run_smoke_test_math_solver():
         "Do not add extra keys or markdown."
     )
 
-    context = Context(trace=Trace(messages=[
-        {"role": "system", "content": prompt},
-    ]))
+    context = Context(
+        trace=Trace(
+            messages=[
+                {"role": "system", "content": prompt},
+            ]
+        )
+    )
     message = {"role": "user", "content": "What is 15 + 27?"}
 
     console.rule("Testing Math Solver with enforce_json")
@@ -388,17 +398,17 @@ def run_smoke_test_math_solver():
     try:
         parsed = json.loads(response.get("content", "{}"))
         console.print("[bold green]✓ Response is valid JSON[/bold green]")
-        
+
         # Check for required keys
         required_keys = {"type", "expression", "result", "latex", "message"}
         missing_keys = required_keys - set(parsed.keys())
         extra_keys = set(parsed.keys()) - required_keys
-        
+
         if missing_keys:
             console.print(f"[yellow]⚠ Missing keys: {missing_keys}[/yellow]")
         if extra_keys:
             console.print(f"[yellow]⚠ Extra keys: {extra_keys}[/yellow]")
-        
+
         console.print(f"[dim]Parsed object: {parsed}[/dim]")
     except json.JSONDecodeError as exc:
         console.print(f"[bold red]✗ Response is not valid JSON: {exc}[/bold red]")
@@ -413,7 +423,6 @@ def run_smoke_test_math_solver():
 
 
 if __name__ == "__main__":
-
     from rich.logging import RichHandler
 
     console = Console()

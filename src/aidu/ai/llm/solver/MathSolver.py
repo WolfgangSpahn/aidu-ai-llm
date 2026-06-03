@@ -4,6 +4,7 @@
 # See LICENSE for the full text.
 
 """LLM-based MathSolver using the shared LLMRequester flow."""
+
 import logging
 import os
 from dotenv import load_dotenv
@@ -15,8 +16,8 @@ from ..clients.openai import OpenAIClient
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import AskConfig
 
-
 logger = logging.getLogger(__name__)
+
 
 class MathSolver(LLMRequester):
     """One-shot math solver using LLMRequester base flow."""
@@ -27,9 +28,6 @@ class MathSolver(LLMRequester):
         "type, expression, result, latex, message. "
         "Do not add extra keys or markdown."
     )
-
-    
-
 
 
 def smoke_test(client, solver, problem="diff(7x^2 + 3x - 5, x)"):
@@ -45,35 +43,36 @@ def smoke_test(client, solver, problem="diff(7x^2 + 3x - 5, x)"):
     return json.loads(response.get("content", "{}"))
 
 
-
 def generate_polynomial(degree=3):
     """
-        Generate a random polynomial of the given degree, via getting random a_n coefficients. (x-a_0)(x-a_1)⋯(x-a_n) 
-        and multiplying it out with sympy. 
-        Coefficients are random integers between -5 and 5, excluding 0 to ensure the term is present.
+    Generate a random polynomial of the given degree, via getting random a_n coefficients. (x-a_0)(x-a_1)⋯(x-a_n)
+    and multiplying it out with sympy.
+    Coefficients are random integers between -5 and 5, excluding 0 to ensure the term is present.
     """
-    
-    import random
 
+    import random
 
     terms = []
     coeffs = []
     for i in range(degree):
-        a_n = random.choice([j for j in range(-5, 6) if j != 0]) + 1/3.
+        a_n = random.choice([j for j in range(-5, 6) if j != 0]) + 1 / 3.0
         coeffs.append(a_n)
         terms.append(f"(x - {a_n})")
     polynomial = " * ".join(terms)
     logger.info(f"Generated polynomial (factored form): {polynomial}")
     # multiplied out with sympy
     from sympy import symbols, expand
-    x = symbols('x')
-    polynomial = expand(eval(polynomial))  
+
+    x = symbols("x")  # noqa: F841
+    polynomial = expand(eval(polynomial))
     return polynomial, set(coeffs)
+
 
 if __name__ == "__main__":
     console = Console()
     # rich logging setup
     from rich.logging import RichHandler
+
     logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[RichHandler()])
 
     load_dotenv()
@@ -95,7 +94,7 @@ if __name__ == "__main__":
         console.print(f"Expected roots (coefficients): [bold cyan]{coeffs}[/bold cyan]")
         try:
             raw = smoke_test(client, solver, problem=f"solve({polynomial}, x)")
-            result = set(raw.get('result', []))
+            result = set(raw.get("result", []))
             console.print(f"Solver result: [bold cyan]{result}[/bold cyan]")
             if all(any(abs(r - c) < 0.5 for r in result) for c in coeffs):
                 console.print("[bold green]PASS[/bold green]")
@@ -114,4 +113,3 @@ if __name__ == "__main__":
     console.print(f"Failed: [bold red]{failed}[/bold red] ({100 * failed / total:.0f}%)")
     if errors:
         console.print(f"Errors: [bold yellow]{errors}[/bold yellow] ({100 * errors / total:.0f}%)")
-    

@@ -2,6 +2,7 @@
 """
 Comprehensive API debugging script with detailed output.
 """
+
 import requests
 import json
 import sys
@@ -22,9 +23,9 @@ class Colors:
 
 
 def print_header(text: str):
-    print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.RESET}")
+    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.BLUE}{text}{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.RESET}\n")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.RESET}\n")
 
 
 def print_success(text: str):
@@ -93,7 +94,7 @@ def test_create_session() -> Optional[str]:
 
 def test_chat_message(session_id: str, message: str) -> Optional[str]:
     """Test sending a chat message."""
-    print_header(f"Test 2: Send Chat Message")
+    print_header("Test 2: Send Chat Message")
     try:
         payload = {"message": message}
         print_info(f"Sending message: '{message}'")

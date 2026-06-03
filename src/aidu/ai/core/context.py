@@ -20,10 +20,11 @@ Message = dict[str, Any]
 
 #     sender: str | None = None
 #     recipient: str | None = None
-#     type: str = "message"
+# type: str = "message"
 
 #     role: str | None = None
 #     content: Any = None
+
 
 class Trace(BaseModel):
     """Trace of messages exchanged so far in the conversation."""
@@ -32,10 +33,13 @@ class Trace(BaseModel):
         default_factory=list,
         description="List of messages exchanged in the conversation so far.",
     )
+
     def __init__(self, messages=None):
         super().__init__(messages=messages or [])
+
     def __str__(self):
         return "messages:" + "len=" + str(len(self.messages))
+
     def pretty(self):
         """Return a Group of Rich Panels, one per message.
 
@@ -89,21 +93,24 @@ class Trace(BaseModel):
             expand=True,
         )
 
+
 class State(BaseModel):
     """Mutable state that can be updated and shared across turns."""
 
     data: dict[str, Any] = Field(
         default_factory=dict,
-   )
-    
+    )
+
     def __init__(self, data=None):
         super().__init__(data=data or {})
 
     def __str__(self):
         return str(self.data)
+
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for the state."""
         return Panel(Pretty(self.data), title="State", border_style="magenta", expand=True)
+
 
 class Control(BaseModel):
     """Control information for execution and flow decisions."""
@@ -123,11 +130,12 @@ class Control(BaseModel):
     def __str__(self):
         control_display = {**self.data, "duration": f"{self.duration:.2f} s"}
         return str(control_display)
-    
+
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for control information (includes duration)."""
         control_display = {**self.data, "duration": f"{self.duration:.2f} s"}
         return Panel(Pretty(control_display), title="Control", border_style="yellow", expand=True)
+
 
 class Context(BaseModel):
     """Typed runtime context carrying history, mutable state, and control data."""
@@ -146,25 +154,13 @@ class Context(BaseModel):
         default_factory=Control,
         description="Control information for execution and flow decisions.",
     )
- 
-    artifacts: dict[str, Artifact] = Field(
-        default_factory=dict
-    )
 
-    def __init__(self):
-        super().__init__(
-            step=0,
-            trace=Trace(),
-            state=State(),
-            control=Control(),
-            artifacts=dict(),
-        )
-
+    artifacts: dict[str, Artifact] = Field(default_factory=dict)
 
     def __str__(self):
         return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
 
-    def pretty(self,console: Console):
+    def pretty(self, console: Console):
         """Pretty-print the context using Rich panels for a boxed view."""
 
         console.print(self.trace.pretty())
@@ -176,9 +172,11 @@ class Context(BaseModel):
         artifacts_dump = {k: v.model_dump() for k, v in self.artifacts.items()}
         console.print(Panel.fit(Pretty(artifacts_dump), title="Artifacts", border_style="green"))
 
+
 # -------------------------------------------------------------------
 # Smoke Test
 # -------------------------------------------------------------------
+
 
 def _smoke_test():
 
@@ -327,11 +325,8 @@ def _smoke_test():
     )
 
     console.print()
-    console.print(
-        "[bold green]✓ Context smoke test passed[/bold green]"
-    )
+    console.print("[bold green]✓ Context smoke test passed[/bold green]")
 
 
 if __name__ == "__main__":
-
     _smoke_test()

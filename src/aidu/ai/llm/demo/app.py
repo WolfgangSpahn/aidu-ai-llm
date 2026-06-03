@@ -4,20 +4,21 @@
 # See LICENSE for the full text.
 
 """
-    Small FastAPI server exposing a stateful chat interface.
-    Mirrors run_smoke_test_chat: one system prompt, per-session message history,
-    single POST endpoint for user turns.
+Small FastAPI server exposing a stateful chat interface.
+Mirrors run_smoke_test_chat: one system prompt, per-session message history,
+single POST endpoint for user turns.
 
-    Run:
-         uv run python -m serve.app
-         # or
-         uvicorn serve.app:app --reload
+Run:
+     uv run python -m serve.app
+     # or
+     uvicorn serve.app:app --reload
 
-     OpenAPI docs available at http://localhost:8000/docs
+ OpenAPI docs available at http://localhost:8000/docs
 """
 
 import logging
 import uuid
+import uvicorn
 from pathlib import Path as FsPath
 from typing import Annotated
 
@@ -29,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from rich.logging import RichHandler
 from rich.console import Console
+
 
 from aidu.ai.llm.clients.openai import OpenAIClient
 from aidu.ai.llm.agents.mathTutor import MathTutor
@@ -44,11 +46,7 @@ load_dotenv()
 console = Console()
 
 # Configure logging with Rich handler - apply to root logger so uvicorn uses it too
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[RichHandler(console=console, rich_tracebacks=True, show_time=True, show_level=True)]
-)
+logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[RichHandler(console=console, rich_tracebacks=True, show_time=True, show_level=True)])
 
 # Get the root logger and apply Rich handler to it for uvicorn
 root_logger = logging.getLogger()
@@ -124,12 +122,13 @@ def _make_client() -> OpenAIClient:
     Create and return an LLMClient instance with the configured model and API key.
     """
     import os
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.error("✗ OPENAI_API_KEY not configured")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
     logger.debug("OpenAI client created")
-    return OpenAIClient("gpt-4o-mini", config={'enforce_json': False}, api_key=api_key)
+    return OpenAIClient("gpt-4o-mini", config={"enforce_json": False}, api_key=api_key)
 
 
 def _make_actor(actor_name: str = DEFAULT_ACTOR):
@@ -153,6 +152,7 @@ def _make_actor(actor_name: str = DEFAULT_ACTOR):
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
+
 
 class SessionResponse(BaseModel):
     session_id: str
@@ -201,6 +201,7 @@ def _resolve_frontend_index() -> FsPath | None:
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @app.post(
     "/sessions",
     response_model=SessionResponse,
@@ -240,7 +241,7 @@ def chat(
     try:
         msg_preview = body.message[:60] + ("..." if len(body.message) > 60 else "")
         logger.info(f"→ Session {session_id} | Message: {msg_preview}")
-        
+
         context = _get_or_raise(session_id)
         user_message = {"role": "user", "content": body.message}
         logger.debug(f"  History: {len(context.trace.messages)} messages")
@@ -249,22 +250,23 @@ def chat(
         logger.debug(f"Calling {actor_id}.chat_turn()...")
         reply, context = actor.chat_turn(context=context, user_message=user_message)
         logger.debug(f" {actor_id}.chat_turn() completed and updated context")
-        
+
         # Persist updated context
         _sessions[session_id] = context
 
         reply_preview = reply[:60] + ("..." if len(reply) > 60 else "")
         logger.info(f"✓ Reply (first 60 chars): {reply_preview}")
         logger.info(f"✓ Full reply ({len(reply)} chars): {reply}")
-        logger.info(f"✓ Updated context: {len(context.trace.messages)} messages in context.trace.messages, context.state keys: {list(context.state.data.keys())}, context.control.data: {context.control.data}, context.control.duration: {context.control.duration:.2f}s")
+        logger.info(
+            f"✓ Updated context: {len(context.trace.messages)} messages in context.trace.messages, context.state keys: {list(context.state.data.keys())}, context.control.data: {context.control.data}, context.control.duration: {context.control.duration:.2f}s"
+        )
         return ChatResponse(session_id=session_id, reply=reply, context=context.model_dump())
-    
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"✗ Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @app.get(
@@ -322,24 +324,18 @@ def evaluate(
     """
     try:
         _get_or_raise(session_id)
-        
+
         client = _make_client()
         evaluator = UncertaintyEvaluator(client)
-        
-        distribution = evaluator.evaluate(
-            eval_params={
-                "text": body.message,
-                "context": body.context,
-                "correct_answer": body.correct_answer
-            }
-        )
-        
+
+        distribution = evaluator.evaluate(eval_params={"text": body.message, "context": body.context, "correct_answer": body.correct_answer})
+
         if distribution is None:
             raise HTTPException(status_code=500, detail="Evaluation failed")
-        
+
         logger.info(f"✓ Evaluation complete: {[f'{v:.2f}' for v in distribution]}")
         return EvaluateResponse(session_id=session_id, distribution=distribution)
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -361,11 +357,19 @@ def frontend_index() -> FileResponse:
 
 app.mount("/", StaticFiles(directory="web/dist", html=True))
 
+
+def main():
+    uvicorn.run(
+        "aidu.ai.llm.demo.app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("serve.app:app", host="0.0.0.0", port=8000, reload=True)
+    main()

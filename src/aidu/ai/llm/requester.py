@@ -5,9 +5,9 @@
 #
 
 """
-    LLMRequester manages prompts, tools, and interactions with the LLM client.
-    Provides methods to build system prompts, update them dynamically, and run agents
-    with messages and context, including support for function calls from LLM responses.
+LLMRequester manages prompts, tools, and interactions with the LLM client.
+Provides methods to build system prompts, update them dynamically, and run agents
+with messages and context, including support for function calls from LLM responses.
 """
 
 import os
@@ -54,15 +54,16 @@ class LLMRequester:
             context = Context(trace=Trace(messages=system_messages))
             message, context = agent.run(message=user_messages[0], context=context)
     """
+
     # Class-level prompt template (optional - can be overridden in subclasses)
-    role            = "assistant"
-    target          = None
+    role = "assistant"
+    target = None
     prompt_template = None
-    
+
     def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
         """
         Initialize LLMRequester.
-        
+
         Args:
             client: LLM client instance
             prompt_template: Override the class-level prompt_template (can be string or file path)
@@ -75,7 +76,7 @@ class LLMRequester:
 
         resolved_template = prompt_template if prompt_template is not None else self.prompt_template
         assert resolved_template, "No prompt template provided for LLMRequester"
-                    
+
         self.prompter = Prompter(
             prompt_template=resolved_template,
             prompt_args=prompt_args,
@@ -189,12 +190,11 @@ class LLMRequester:
         Function calls are returned but not executed automatically.
         """
 
-        # assure that the first message in the trace is always the system prompt, 
+        # assure that the first message in the trace is always the system prompt,
         if not context.trace.messages or context.trace.messages[0]["role"] != "system":
             logger.error("Context trace must start with a system message. Please build and prepend the system prompt to the trace before calling ask().")
             raise ValueError("Context trace must start with a system message.")
-         
-         
+
         # and update it with current params if needed
 
         if ask_params:
@@ -202,7 +202,7 @@ class LLMRequester:
 
         # Inject instance-level tools into the per-call config.
         from dataclasses import replace as dataclass_replace
-        
+
         if ask_config:
             ask_config = dataclass_replace(
                 ask_config,
@@ -231,7 +231,7 @@ class LLMRequester:
             "cost_usd": cost_usd,
         }
 
-        # we got a function call request from the LLM, let's call the registered function and update the context accordingly, then attach the 
+        # we got a function call request from the LLM, let's call the registered function and update the context accordingly, then attach the
         # function result to the response for potential use in the next turn or by the caller.
         fc = response.get("function_call")
         if fc:
@@ -241,23 +241,14 @@ class LLMRequester:
 
             if fn:
                 result = fn(context=context, **args)
-                assert isinstance(result, tuple) and len(result) == 2, (
-                    f"Function call '{fc['name']}' must return (message, context)"
-                )
+                assert isinstance(result, tuple) and len(result) == 2, f"Function call '{fc['name']}' must return (message, context)"
                 fc_message, context = result
                 response["_fc_message"] = fc_message.get("content", "")
                 if ask_config and ask_config.route_mode:
                     logger.debug("Route mode enabled - attaching function call result to response content for routing.")
-                    message = {
-                        "role": self.role,
-                        "type": "route",
-                        "content": fc_message.get("content", "")
-                    }
+                    message = {"role": self.role, "type": "route", "content": fc_message.get("content", "")}
                     response.update(message)
                     return response, context
-
-
-
 
         if ask_config and ask_config.route_mode:
             logger.debug("Route mode enabled - returning response with route content if present.")
@@ -272,30 +263,27 @@ class LLMRequester:
                             "producer": self.id,
                             "step": context.step,
                             "content": json.dumps(response.get("_fc_message", response.get("content", ""))),
-                        }],
+                        }
+                    ],
                     "recommendations": [
                         {
                             "target": self.target or "next_agent",
                             "utility": 1.0,
                             "rationale": "symbolic computation requested",
                         }
-                    ]
-                    },
-                }
+                    ],
+                },
+            }
             response.update(message)
             return response, context
-            
+
         return response, context
-    
+
     def talk(self, message, context, run_params=None):
         """
         Convenience method to run and append response to context.trace.
         """
-        effective_context = (
-            self.update_system_prompt(context, prompt_params=run_params)
-            if run_params
-            else context
-        )
+        effective_context = self.update_system_prompt(context, prompt_params=run_params) if run_params else context
         response, effective_context = self.ask(
             message=message,
             context=effective_context,
@@ -308,16 +296,18 @@ class LLMRequester:
             response=response,
         )
         return response, effective_context
-    
+
 
 # ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 # smoke test - function call
 #
 
+
 def add_numbers(context, a: int, b: int):
     result = a + b
     context.state.data["result"] = result
     return context
+
 
 def run_smoke_test_fn_call():
     load_dotenv()
@@ -343,15 +333,8 @@ def run_smoke_test_fn_call():
             "function": {
                 "name": "add_numbers",
                 "description": "Add two numbers",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "a": {"type": "number"},
-                        "b": {"type": "number"}
-                    },
-                    "required": ["a", "b"]
-                }
-            }
+                "parameters": {"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]},
+            },
         }
     ]
 
@@ -360,14 +343,9 @@ def run_smoke_test_fn_call():
     agent.register("add_numbers", add_numbers)
 
     # setup messages
-    system_messages = agent.build_system_prompt({
-        "problem": "2 + 3",
-        "subject": "math"
-    })
-    user_messages = [
-        {"role": "user", "content": "What is 2 + 3? Use the tool."}
-    ]
-  
+    system_messages = agent.build_system_prompt({"problem": "2 + 3", "subject": "math"})
+    user_messages = [{"role": "user", "content": "What is 2 + 3? Use the tool."}]
+
     # initial context
     context = Context(trace=Trace(messages=system_messages))
 
@@ -394,6 +372,7 @@ def run_smoke_test_fn_call():
         print("\n✅ Tool execution verified")
 
     print("\n✅ Smoke test passed!")
+
 
 # --------------------------------------------------------------------------------------------------------------
 # smoke test - basic chat (no tool call)
@@ -441,10 +420,9 @@ def run_smoke_test_ask(console):
         console.print("assistant>", message["content"])
 
     console.print("\n✅ Smoke chat finished.")
-    
+
 
 if __name__ == "__main__":
-
     # Setup logging
     console = Console()
     logging.basicConfig(

@@ -14,7 +14,6 @@ import os
 
 from .builder import PromptBuilder
 from aidu.ai.core.context import Context
-from .safeformat import SafeFormat
 
 
 class Prompter:
@@ -26,7 +25,7 @@ class Prompter:
     - Template file:   Prompter(prompt_template="/path/to/prompt.txt")
     """
 
-    role = "system" 
+    role = "system"
 
     def __init__(self, prompt_template=None, prompt_args=None):
         """

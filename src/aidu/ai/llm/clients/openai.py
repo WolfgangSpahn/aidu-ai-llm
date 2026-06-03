@@ -9,7 +9,6 @@ OpenAI LLM client implementation.
 
 import logging
 import os
-import json
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -27,35 +26,29 @@ logger = logging.getLogger(__name__)
 # USD per 1M tokens (input/output)
 MODEL_COSTS_USD_PER_1M = {
     # GPT-4o family
-    "gpt-4o":                  {"input": 2.50,  "output": 10.00},
-    "gpt-4o-2024-11-20":       {"input": 2.50,  "output": 10.00},
-    "gpt-4o-mini":             {"input": 0.15,  "output": 0.60},
-    "gpt-4o-mini-2024-07-18":  {"input": 0.15,  "output": 0.60},
-
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-4o-2024-11-20": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4o-mini-2024-07-18": {"input": 0.15, "output": 0.60},
     # o-series reasoning models
-    "o1":                      {"input": 15.00, "output": 60.00},
-    "o1-mini":                 {"input": 1.10,  "output": 4.40},
-
+    "o1": {"input": 15.00, "output": 60.00},
+    "o1-mini": {"input": 1.10, "output": 4.40},
     # updated o3 pricing
-    "o3":                      {"input": 2.00,  "output": 8.00},
-    "o3-mini":                 {"input": 1.10,  "output": 4.40},
-    "o4-mini":                 {"input": 1.10,  "output": 4.40},
-
+    "o3": {"input": 2.00, "output": 8.00},
+    "o3-mini": {"input": 1.10, "output": 4.40},
+    "o4-mini": {"input": 1.10, "output": 4.40},
     # GPT-4.1 family
-    "gpt-4.1":                 {"input": 2.00,  "output": 8.00},
-    "gpt-4.1-mini":            {"input": 0.40,  "output": 1.60},
-    "gpt-4.1-nano":            {"input": 0.10,  "output": 0.40},
-
+    "gpt-4.1": {"input": 2.00, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     # GPT-5 family
-    "gpt-5":                   {"input": 1.25,  "output": 10.00},
-    "gpt-5-mini":              {"input": 0.25,  "output": 2.00},
-
+    "gpt-5": {"input": 1.25, "output": 10.00},
+    "gpt-5-mini": {"input": 0.25, "output": 2.00},
     # optional newer nano
-    "gpt-5-nano":              {"input": 0.05,  "output": 0.40},
-
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},
     # GPT-4 Turbo (legacy)
-    "gpt-4-turbo":             {"input": 10.00, "output": 30.00},
-    "gpt-4-turbo-2024-04-09":  {"input": 10.00, "output": 30.00},
+    "gpt-4-turbo": {"input": 10.00, "output": 30.00},
+    "gpt-4-turbo-2024-04-09": {"input": 10.00, "output": 30.00},
 }
 
 
@@ -63,22 +56,19 @@ def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens:
     rates = MODEL_COSTS_USD_PER_1M.get(model or "")
     if not rates:
         return 0.0
-    return (
-        (prompt_tokens * rates["input"]) +
-        (completion_tokens * rates["output"])
-    ) / 1_000_000
+    return ((prompt_tokens * rates["input"]) + (completion_tokens * rates["output"])) / 1_000_000
 
 
 class OpenAIClient(Client):
     def __init__(self, model=None, config={}, api_key=None):
 
-        if model == None:
+        if model is None:
             logger.warning("No model specified for OpenAIClient, defaulting to gpt-4o-mini")
             model = "gpt-4o-mini"
 
         if api_key is None:
             env_path = find_up(".env")
-            logger.warning("No API key provided, loading environment variables from %s", env_path) 
+            logger.warning("No API key provided, loading environment variables from %s", env_path)
             load_dotenv(env_path)
             api_key = os.getenv("OPENAI_API_KEY")
             assert api_key, "Missing OPENAI_API_KEY in .env"
@@ -186,22 +176,25 @@ class OpenAIClient(Client):
 # --------------------------------------------------------------------------------------------------------------
 # smoke test - basic ask
 
+
 def run_smoke_test_ask(console):
 
     env_path = find_up(".env")
     logger.info("Loading environment variables from %s", env_path)
     load_dotenv(env_path)
 
-
     api_key = os.getenv("OPENAI_API_KEY")
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
     client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
 
-    context = Context(trace=Trace(messages=[
-        {"role": "system", "content": "You are a helpful assistant and meeting Henry. Address Henry by his name"
-        },
-    ]))
+    context = Context(
+        trace=Trace(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant and meeting Henry. Address Henry by his name"},
+            ]
+        )
+    )
     message = {"role": "user", "content": "Hi you."}
 
     system_prompt = context.trace.messages[0]["content"]
@@ -248,4 +241,3 @@ if __name__ == "__main__":
     )
 
     run_smoke_test_ask(console)
-

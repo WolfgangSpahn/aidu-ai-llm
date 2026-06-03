@@ -4,8 +4,8 @@
 # See LICENSE for the full text.
 
 """
-    Plugin specification definitions using pluggy for tool discovery and execution.
-    Defines the interface for getting tools and calling them with context management.
+Plugin specification definitions using pluggy for tool discovery and execution.
+Defines the interface for getting tools and calling them with context management.
 """
 
 import pluggy

@@ -4,8 +4,8 @@
 # See LICENSE for the full text.
 
 """
-    Tool registry for mapping and executing LLM function calls to Python methods.
-    Handles function discovery, signature normalization, and safe execution.
+Tool registry for mapping and executing LLM function calls to Python methods.
+Handles function discovery, signature normalization, and safe execution.
 """
 
 import inspect
@@ -38,7 +38,6 @@ class ToolRegistry:
         """
 
         for name, method in inspect.getmembers(instance, predicate=inspect.ismethod):
-
             if not name.startswith("fc_"):
                 continue
 

@@ -4,8 +4,8 @@
 # See ../LICENSE for the full text.
 
 """
-    Prompt builder for constructing and managing LLM prompts with parameter substitution.
-    Handles placeholder replacement and template validation.
+Prompt builder for constructing and managing LLM prompts with parameter substitution.
+Handles placeholder replacement and template validation.
 """
 
 import re
@@ -13,6 +13,7 @@ from .safeformat import SafeFormat
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class PromptBuilder:
     """
@@ -36,7 +37,7 @@ class PromptBuilder:
 
         # apply prompt params safely
         if prompt_params:
-            # assure that prompt_params does not contain keys that are not in the template 
+            # assure that prompt_params does not contain keys that are not in the template
             # to avoid confusion
             placeholders = self.extract_placeholders()
             for key in prompt_params.keys():
@@ -48,7 +49,8 @@ class PromptBuilder:
 
     def extract_placeholders(self) -> list[str]:
         """Return all placeholders in the template."""
-        return re.findall(r'{(.*?)}', self.template)
+        return re.findall(r"{(.*?)}", self.template)
+
 
 # --------------------------------------------------------------------------------------------------------------
 # smoke test
@@ -57,10 +59,7 @@ class PromptBuilder:
 
 def run_smoke_test():
     template = "Solve the problem: {problem}. Use the following context: {context}."
-    prompt_params = {
-        "problem": "What is the capital of France?",
-        "context": "France is a country in Europe. Its capital is Paris."
-    }
+    prompt_params = {"problem": "What is the capital of France?", "context": "France is a country in Europe. Its capital is Paris."}
     builder = PromptBuilder(template)
     prompt = builder.build(prompt_params)
     print(prompt)

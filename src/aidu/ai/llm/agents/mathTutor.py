@@ -8,40 +8,37 @@ Math tutor agent with automatic function calling for solving math problems and t
 """
 
 import logging
-import re
 import textwrap
 from pydantic import BaseModel, Field
 
 from aidu.ai.symbolic.engines.SymbolicSolver import SymbolicSolver
 from aidu.ai.core.context import Context, Message
-from aidu.ai.core.agent_result import AgentResult
-from aidu.ai.core.artifacts import SymbolicArtifact, EvidenceArtifact
-from aidu.ai.core.protocols import CognitiveAgentProtocol
-from aidu.ai.core.recommendation import Recommendation
 
 from ..agent import LLMAgent
-from ..clients.sympy import solve_math_problem_with_sympy
+
 logger = logging.getLogger(__name__)
 
 
 class StudentInfo(BaseModel):
     """Student information."""
+
     name: str = Field(..., description="Student's full name")
     age: int = Field(..., description="Student's age")
+
 
 class MathTutor(LLMAgent):
     """A math tutor agent with function calls for solving problems and tracking student progress."""
 
     # System prompt with flexible placeholders that can be filled via prompt_args
     # Unfilled placeholders will remain as {placeholder} for later customization
-    # 
+    #
     # Usage examples:
     #   # Use with defaults (unfilled placeholders remain as {placeholder})
     #   tutor = MathTutor(client)
-    #   
+    #
     #   # Customize specific fields
     #   tutor = MathTutor(client, prompt_args={"student_name": " for Alice", "level": " in algebra"})
-    #   
+    #
     #   # Override at prompt building time
     #   messages = tutor.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
     prompt_template = textwrap.dedent("""\
@@ -60,7 +57,7 @@ class MathTutor(LLMAgent):
         - Encourage students to think critically and ask questions
         - Be supportive and patient with students who are learning{focus_areas}
         """).strip()
-    
+
     capability_specs = {
         "symbolic_engine": SymbolicSolver,
     }
@@ -73,7 +70,7 @@ class MathTutor(LLMAgent):
             problem (str): The math problem to solve (e.g., "2x + 3 = 7"). Use sympy syntax for more complex problems, such as:
             - "diff(expr,x)" for derivatives (e.g., "diff(7x^2 + 3x - 5, x)")
             - "solve(expr,x )" to solve for x in an expression (e.g., "solve(2x + 3 = 7, x)")
-            
+
         Returns:
             tuple: (message, context) where message describes the solution for context
         """
@@ -103,15 +100,14 @@ class MathTutor(LLMAgent):
         logger.info(f"Context updated in fc_solve_math_problem: {context.state.data}")
         # Return both message (for user) and context (for LLM context)
         return message, context
-    
- 
+
     def fc_student_completed(self, context: Context, student: StudentInfo) -> tuple[Message, Context]:
         """
         Mark that a student has completed an exercise.
 
         Args:
             student (StudentInfo): The student who completed the exercise.
-            
+
         Returns:
             tuple: (message, context) where message describes the completion for context
         """
@@ -125,11 +121,10 @@ class MathTutor(LLMAgent):
         return message, context
 
 
-
-
 # ————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 # Smoke test
 #
+
 
 def run_smoke_test(console):
     """Smoke test for MathTutor demonstrating schema generation and interactive chat."""
@@ -178,13 +173,13 @@ def run_smoke_test(console):
         return text
 
     def display_response(text):
-        console.print(f"[cyan][tutor>[/]")
+        console.print("[cyan][tutor>[/]")
         console.print(Markdown(text))
 
     def on_end():
         console.print("\n[green]✓ Session Complete[/]")
 
-    context = tutor.interactive_chat(
+    tutor.interactive_chat(
         context=Context(trace=Trace(messages=tutor.build_system_prompt())),
         on_display_header=header,
         on_get_user_input=get_input,
@@ -194,7 +189,6 @@ def run_smoke_test(console):
     )
 
     print("\n✅ MathTutor smoke test passed!")
-
 
     def run_smoke_test_new(console):
         """Smoke test for MathTutor demonstrating schema generation, AgentResult generation and interactive chat."""
@@ -209,13 +203,13 @@ def run_smoke_test(console):
         from rich.pretty import Pretty
 
         from aidu.ai.core.context import Context, Trace
-        from aidu.ai.core.agent_result import AgentResult
+        from aidu.ai.core.processor_result import ProcessorResult as AgentResult
 
         from ..clients.openai import OpenAIClient
         from aidu.support.filesystem.search import find_up
 
         env_path = find_up(".env")
-        logger.info("Loading environment variables from %s", env_path) 
+        logger.info("Loading environment variables from %s", env_path)
         load_dotenv(env_path)
 
         api_key = os.getenv("OPENAI_API_KEY")
@@ -273,13 +267,9 @@ def run_smoke_test(console):
         assert len(result.artifacts) > 0
         assert len(result.recommendations) > 0
 
-        console.print(
-            f"[green]✓ Produced {len(result.artifacts)} artifact(s)[/green]"
-        )
+        console.print(f"[green]✓ Produced {len(result.artifacts)} artifact(s)[/green]")
 
-        console.print(
-            f"[green]✓ Produced {len(result.recommendations)} recommendation(s)[/green]"
-        )
+        console.print(f"[green]✓ Produced {len(result.recommendations)} recommendation(s)[/green]")
 
         completion_result = tutor.fc_student_completed(
             context=context,
@@ -318,10 +308,7 @@ def run_smoke_test(console):
             turn_count[0] += 1
 
             if turn_count[0] == 1:
-                text = (
-                    "What is the derivative of 7x^2 + 3x - 5? "
-                    "Just the result, no explanation yet."
-                )
+                text = "What is the derivative of 7x^2 + 3x - 5? Just the result, no explanation yet."
 
             elif turn_count[0] == 2:
                 text = "Can you explain how?"
@@ -331,7 +318,7 @@ def run_smoke_test(console):
 
             indented = textwrap.indent(text, "  ")
 
-            console.print(f"[yellow][user>[/]")
+            console.print("[yellow][user>[/]")
             console.print(indented)
 
             return text
@@ -345,16 +332,10 @@ def run_smoke_test(console):
 
         def on_end():
 
-            console.print(
-                "\n[green]✓ Session Complete[/green]"
-            )
+            console.print("\n[green]✓ Session Complete[/green]")
 
         context = tutor.interactive_chat(
-            context=Context(
-                trace=Trace(
-                    messages=tutor.build_system_prompt()
-                )
-            ),
+            context=Context(trace=Trace(messages=tutor.build_system_prompt())),
             on_display_header=header,
             on_get_user_input=get_input,
             on_display_response=display_response,
@@ -375,9 +356,11 @@ def run_smoke_test(console):
         #     "\n[bold green]✓ MathTutor smoke test passed[/bold green]"
         # )
 
+
 if __name__ == "__main__":
     from rich.logging import RichHandler
     from rich.console import Console
+
     console = Console()
     logging.basicConfig(
         level=logging.WARNING,

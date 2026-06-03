@@ -8,7 +8,6 @@ from typing import Any
 
 @dataclass
 class AskConfig:
-
     # Response behavior
     json_mode: bool = False
 
