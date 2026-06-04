@@ -24,6 +24,7 @@ from aidu.ai.core.processor_result import ProcessorResult
 from .requester import LLMRequester
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def parse_docstring(func):
@@ -153,7 +154,7 @@ class LLMAgent(LLMRequester):
         prefix_len = len(prefix)
         return [name[prefix_len:] for name, func in inspect.getmembers(cls, predicate=inspect.isfunction) if name.startswith(prefix)]
 
-    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, capability_overrides=None):
+    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, capability_overrides=None, target: str = None):
         """
         Initialize LLMAgent with optional template and argument overrides.
         - If tools is None, automatically generates from schema
@@ -167,7 +168,7 @@ class LLMAgent(LLMRequester):
         # Set tools on the client so OpenAI API can trigger function calls
         client.tools = tools
 
-        super().__init__(client, prompt_template=prompt_template, prompt_args=prompt_args, tools=tools)
+        super().__init__(client, prompt_template=prompt_template, prompt_args=prompt_args, tools=tools, target=target)
 
         # Auto-register all fc_* methods with their full function name
         for name, func in inspect.getmembers(self, predicate=inspect.ismethod):

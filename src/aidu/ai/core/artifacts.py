@@ -1,16 +1,19 @@
 # src/aidu/ai/core/artifacts.py
-
-from pydantic import BaseModel
-from typing import Any
+import logging
+from pydantic import BaseModel, Field
+from typing import Any, Literal, Annotated
 from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.text import Text
 from rich.console import Group
 from rich import box
+from uuid import uuid4
 
+
+logger = logging.getLogger(__name__)
 
 class Artifact(BaseModel):
-    id: str
+    id: str = Field(default_factory=lambda: str(uuid4()))
     producer: str
     type: str
     step: int
@@ -36,31 +39,38 @@ class Artifact(BaseModel):
             expand=True,
         )
 
-
 class TextArtifact(Artifact):
-    type: str = "text"
+    type: Literal["text"] =  "text"
     content: str
 
 
 class SymbolicArtifact(Artifact):
-    type: str = "symbolic"
+    type: Literal["symbolic"] = "symbolic"
     content: Any
 
 
 class EvidenceArtifact(Artifact):
-    type: str = "evidence"
+    type: Literal["evidence"] = "evidence"
     content: dict[str, Any]
 
 
 class BeliefArtifact(Artifact):
-    type: str = "belief"
+    type: Literal["belief"] = "belief"
     content: dict[str, Any]
 
 
 class ErrorArtifact(Artifact):
-    type: str = "error"
+    type: Literal["error"] = "error"
     content: Any
 
+ArtifactType = Annotated[
+    TextArtifact
+    | SymbolicArtifact
+    | EvidenceArtifact
+    | BeliefArtifact
+    | ErrorArtifact,
+    Field(discriminator="type"),
+]
 
 def create_artifact(artifact_type: str, id: str, producer: str, step: int, content: Any) -> Artifact:
     """Factory function to create an artifact based on the type."""

@@ -29,6 +29,7 @@ from .clients.openai import OpenAIClient
 from .prompter import Prompter
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class LLMRequester:
@@ -57,10 +58,9 @@ class LLMRequester:
 
     # Class-level prompt template (optional - can be overridden in subclasses)
     role = "assistant"
-    target = None
     prompt_template = None
 
-    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None):
+    def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, target: str = None):
         """
         Initialize LLMRequester.
 
@@ -73,6 +73,7 @@ class LLMRequester:
         self.client = client
         self.tools = tools or []
         self.function_lookup = {}
+        self.target = target
 
         resolved_template = prompt_template if prompt_template is not None else self.prompt_template
         assert resolved_template, "No prompt template provided for LLMRequester"
@@ -248,6 +249,7 @@ class LLMRequester:
                     logger.debug("Route mode enabled - attaching function call result to response content for routing.")
                     message = {"role": self.role, "type": "route", "content": fc_message.get("content", "")}
                     response.update(message)
+                    logger.debug(f"Route mode enabled - returning route message: {message}")
                     return response, context
 
         if ask_config and ask_config.route_mode:
@@ -275,8 +277,10 @@ class LLMRequester:
                 },
             }
             response.update(message)
+            logger.debug(f"Route mode enabled - returning route message: {message}")
             return response, context
 
+        logger.debug(f"LLM response: {response}")
         return response, context
 
     def talk(self, message, context, run_params=None):
