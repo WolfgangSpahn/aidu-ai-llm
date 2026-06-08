@@ -9,8 +9,8 @@ from rich.console import Group
 from rich import box
 from uuid import uuid4
 
-
 logger = logging.getLogger(__name__)
+
 
 class Artifact(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -39,8 +39,9 @@ class Artifact(BaseModel):
             expand=True,
         )
 
+
 class TextArtifact(Artifact):
-    type: Literal["text"] =  "text"
+    type: Literal["text"] = "text"
     content: str
 
 
@@ -63,14 +64,12 @@ class ErrorArtifact(Artifact):
     type: Literal["error"] = "error"
     content: Any
 
+
 ArtifactType = Annotated[
-    TextArtifact
-    | SymbolicArtifact
-    | EvidenceArtifact
-    | BeliefArtifact
-    | ErrorArtifact,
+    TextArtifact | SymbolicArtifact | EvidenceArtifact | BeliefArtifact | ErrorArtifact,
     Field(discriminator="type"),
 ]
+
 
 def create_artifact(artifact_type: str, id: str, producer: str, step: int, content: Any) -> Artifact:
     """Factory function to create an artifact based on the type."""

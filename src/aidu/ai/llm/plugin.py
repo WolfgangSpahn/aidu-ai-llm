@@ -9,7 +9,7 @@ from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import AskConfig
 import asyncio
 
-from aidu.ai.llm.agents.mathTutor import MathTutor
+from aidu.ai.llm.assistants.mathTutor import MathTutor
 from aidu.ai.llm.solver.MathSolver import MathSolver
 from aidu.ai.core.hookspecs import hookimpl, HookSpecs
 from aidu.support.filesystem.search import find_up
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class LLMPlugin:
     @hookimpl
-    def get_agents(self):
+    def get_assistants(self):
 
         return [
             MathTutor,
@@ -48,12 +48,12 @@ async def _smoke_test():
     pm.add_hookspecs(HookSpecs)
     pm.register(LLMPlugin())
 
-    results = pm.hook.get_agents()
+    results = pm.hook.get_assistants()
 
-    agents = []
+    assistants = []
 
     for group in results:
-        agents.extend(group)
+        assistants.extend(group)
 
     client = OpenAIClient(
         "gpt-4o-mini",
@@ -66,7 +66,7 @@ async def _smoke_test():
         "content": "What is 2 + 2?",
     }
 
-    for agent_cls in agents:
+    for agent_cls in assistants:
         print(f"\n- {agent_cls.__name__}")
 
         try:

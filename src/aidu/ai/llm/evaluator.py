@@ -4,7 +4,7 @@
 # See LICENSE for the full text.
 
 """
-Evaluation agents extending LLMRequester for analyzing and scoring LLM outputs.
+Evaluation assistant extending LLMRequester for analyzing and scoring LLM outputs.
 Provides base Evaluator class and specialized implementations for educational scenarios.
 """
 

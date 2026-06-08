@@ -10,7 +10,7 @@ hookimpl = pluggy.HookimplMarker("aidu")
 
 class HookSpecs:
     @hookspec
-    def get_agents(self):
+    def get_assistants(self):
         """
-        Return available chat-capable agent classes.
+        Return available chat-capable assistant classes.
         """

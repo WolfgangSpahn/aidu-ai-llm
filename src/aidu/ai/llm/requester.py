@@ -6,23 +6,27 @@
 
 """
 LLMRequester manages prompts, tools, and interactions with the LLM client.
-Provides methods to build system prompts, update them dynamically, and run agents
+Provides methods to build system prompts, update them dynamically, and run assistants
 with messages and context, including support for function calls from LLM responses.
 """
 
+from ast import TypeAlias
 import os
 import json
 import logging
 import time
 from uuid import uuid4
 
+from aidu.ai.core.processor_result import AgentResult
 from rich.logging import RichHandler
 from rich.console import Console
 
 from dotenv import load_dotenv
 from rich.rule import Rule
 
-from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.artifacts import TextArtifact
+from aidu.ai.core.recommendation import Recommendation
+from aidu.ai.core.context import Context, Trace, Message
 from aidu.ai.core.config import AskConfig
 from .client import clean_message
 from .clients.openai import OpenAIClient
@@ -30,6 +34,8 @@ from .prompter import Prompter
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+AssistantResult: TypeAlias = Message | AgentResult
 
 
 class LLMRequester:
@@ -59,6 +65,7 @@ class LLMRequester:
     # Class-level prompt template (optional - can be overridden in subclasses)
     role = "assistant"
     prompt_template = None
+    result_type = Message
 
     def __init__(self, client, prompt_template=None, prompt_args=None, tools=None, target: str = None):
         """
@@ -74,6 +81,9 @@ class LLMRequester:
         self.tools = tools or []
         self.function_lookup = {}
         self.target = target
+        if self.target == None:
+            logger.warning(f"No target specified for LLMRequester {self} - you can not use ask(...) with ask_config.route_mode==True.")
+            self.target = "next_agent"
 
         resolved_template = prompt_template if prompt_template is not None else self.prompt_template
         assert resolved_template, "No prompt template provided for LLMRequester"
@@ -156,7 +166,7 @@ class LLMRequester:
         )
         return context
 
-    def ask(self, message, context, ask_params=None, ask_config: AskConfig | None = None):
+    def ask(self, message, context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
         """
         Execute a single LLM request.
 
@@ -242,46 +252,27 @@ class LLMRequester:
 
             if fn:
                 result = fn(context=context, **args)
-                assert isinstance(result, tuple) and len(result) == 2, f"Function call '{fc['name']}' must return (message, context)"
-                fc_message, context = result
-                response["_fc_message"] = fc_message.get("content", "")
-                if ask_config and ask_config.route_mode:
-                    logger.debug("Route mode enabled - attaching function call result to response content for routing.")
-                    message = {"role": self.role, "type": "route", "content": fc_message.get("content", "")}
-                    response.update(message)
-                    logger.debug(f"Route mode enabled - returning route message: {message}")
-                    return response, context
 
-        if ask_config and ask_config.route_mode:
-            logger.debug("Route mode enabled - returning response with route content if present.")
-            message = {
-                "role": self.role,
-                "type": "route",
-                "content": {
-                    "artifacts": [
-                        {
-                            "id": str(uuid4()),
-                            "type": "text",
-                            "producer": self.id,
-                            "step": context.step,
-                            "content": json.dumps(response.get("_fc_message", response.get("content", ""))),
-                        }
-                    ],
-                    "recommendations": [
-                        {
-                            "target": self.target or "next_agent",
-                            "utility": 1.0,
-                            "rationale": "symbolic computation requested",
-                        }
-                    ],
-                },
-            }
-            response.update(message)
-            logger.debug(f"Route mode enabled - returning route message: {message}")
+                assert isinstance(result, tuple) and len(result) == 2, f"Function call '{fc['name']}' must return (Message|AgentResult, Context)"
+
+                payload, context = result
+
+                assert isinstance(payload, self.result_type), f"Function call '{fc['name']}' must return {self.result_type.__name__}"
+
+                return payload, context
+            
+        # TODO: NOW WE NEED TO INJECT _fn_result into the response in the function call
+
+        if self.result_type == AgentResult:
+            return (
+                AgentResult(
+                    artifacts=[TextArtifact(producer=self.id, step=context.step, content=response.get("content", ""))],
+                    recommendations=[Recommendation(target=self.target, utility=1.0)],
+                ),
+                context,
+            )
+        else:
             return response, context
-
-        logger.debug(f"LLM response: {response}")
-        return response, context
 
     def talk(self, message, context, run_params=None):
         """

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from aidu.ai.symbolic.engines.SymbolicSolver import SymbolicSolver
 from aidu.ai.core.context import Context, Message
 
-from ..agent import LLMAgent
+from ..assistant import LLMAssistant
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class StudentInfo(BaseModel):
     age: int = Field(..., description="Student's age")
 
 
-class MathTutor(LLMAgent):
+class MathTutor(LLMAssistant):
     """A math tutor agent with function calls for solving problems and tracking student progress."""
 
     # System prompt with flexible placeholders that can be filled via prompt_args
@@ -203,7 +203,7 @@ def run_smoke_test(console):
         from rich.pretty import Pretty
 
         from aidu.ai.core.context import Context, Trace
-        from aidu.ai.core.processor_result import ProcessorResult as AgentResult
+        from aidu.ai.core.agent_result import ProcessorResult as AgentResult
 
         from ..clients.openai import OpenAIClient
         from aidu.support.filesystem.search import find_up
