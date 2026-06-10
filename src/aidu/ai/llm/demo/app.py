@@ -94,6 +94,12 @@ MODEL = "gpt-4o-mini"
 SYSTEM_PROMPT = "You are a helpful assistant."
 DEFAULT_ACTOR = "MathTutor"
 WEB_DIR = FsPath(__file__).parent / "web"
+ASSETS_DIR = WEB_DIR / "assets"
+
+logger.info("ASSETS_DIR=%s", ASSETS_DIR)
+logger.info("ASSETS exists=%s", ASSETS_DIR.exists())
+
+INDEX_FILE = "index.solidjs.html"
 logger.info("WEB_DIR = %s", WEB_DIR)
 logger.info("exists = %s", WEB_DIR.exists())
 
@@ -187,25 +193,11 @@ class EvaluateResponse(BaseModel):
     distribution: list[float]
 
 
-def _resolve_frontend_index() -> FsPath | None:
-    """Return the built frontend entrypoint, supporting both raw and SolidJS builds."""
-    primary = WEB_DIST_DIR / "index.html"
-    if primary.exists():
-        return primary
-
-    solid = WEB_DIST_DIR / "index.solidjs.html"
-    if solid.exists():
-        return solid
-
-    return None
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
-@app.get("/")
-def root():
-    return FileResponse(WEB_DIR / "index.solidjs.html")
 
 @app.post(
     "/sessions",
@@ -347,26 +339,27 @@ def evaluate(
         logger.error(f"✗ Error in evaluate endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.get("/", include_in_schema=False)
-def frontend_index() -> FileResponse:
-    """Serve whichever frontend variant was built most recently."""
-    index_file = _resolve_frontend_index()
-    if index_file is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Frontend build not found. Build web assets first (e.g., make web.build).",
-        )
-    return FileResponse(index_file)
-
-
 app.mount(
-    "/",
-    StaticFiles(directory=str(WEB_DIR), html=True),
-    name="frontend",
+    "/assets",
+    StaticFiles(directory=WEB_DIR / "assets"),
+    name="assets",
 )
 
+@app.get("/", include_in_schema=False)
+def frontend_index():
+
+    response = FileResponse(WEB_DIR / INDEX_FILE)
+
+    response.headers["Cache-Control"] = (
+        "no-cache, no-store, must-revalidate"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    return response
+
 def main():
+    logger.warning("⚠️  Start app with http://127.0.0.1:8000 or http://localhost:8000")
     uvicorn.run(
         "aidu.ai.llm.demo.app:app",
         host="0.0.0.0",

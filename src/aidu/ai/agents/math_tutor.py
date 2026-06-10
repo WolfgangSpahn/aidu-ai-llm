@@ -31,12 +31,11 @@ logger.setLevel(logging.DEBUG)
 
 class MathTutor(WorkflowAgent, LLMFcRequester):
     """A math tutor agent with function calls for solving problems and tracking student progress."""
-    # result_type = AgentResult
-    # Use class references for target/continuations; assigned after class definition
 
-    # will be assigned after class definition to allow for self-reference and other classes
-    # target = SymbolicSolver
-    # continuations = [] 
+    # assign this now or after class definition
+    # -----------------------------------------
+    # target = ?
+    # continuations = ?
 
     # System prompt with flexible placeholders that can be filled via prompt_args
     # Unfilled placeholders will remain as {placeholder} for later customization
@@ -71,8 +70,6 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
         - Encourage students to think critically and ask questions
                   
         """).strip()
-
-
 
     def run(self, artifact: SymbolicArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
 

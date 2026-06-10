@@ -243,6 +243,7 @@ function App() {
   const [messages, setMessages]     = createSignal<Message[]>( JSON.parse(localStorage.getItem("chat") || "[]") );
   const [sessionId, setSessionId]   = createSignal<string>( localStorage.getItem("chat_session_id") || "" );
   const [loading, setLoading]       = createSignal(false);
+  const [error, setError]           = createSignal<string | null>(null);
   const [inputValue, setInputValue] = createSignal("");
   const [inputStartedAt, setInputStartedAt] = createSignal<number | null>(null);
 
@@ -260,6 +261,8 @@ function App() {
   });
 
   async function sendMessage(content: string, userDuration: number) {
+    // clear previous error when user retries
+    setError(null);
     // Optimistic UI update: show user message immediately.
       setMessages(prev => [...prev, {
         role: "user",
@@ -281,7 +284,19 @@ function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
-        if (!createRes.ok) throw new Error(`Failed to create session (${createRes.status})`);
+        if (!createRes.ok) {
+          let errDetail = `Failed to create session (${createRes.status})`;
+          try {
+            const body = await createRes.json();
+            if (body && (body.detail || body.error || body.message)) {
+              errDetail = String(body.detail ?? body.error ?? body.message);
+            }
+          } catch (e) {
+            // ignore JSON parse errors
+          }
+          setError(errDetail);
+          throw new Error(errDetail);
+        }
         const createData = await createRes.json();
         sid = createData.session_id;
         setSessionId(sid);
@@ -302,9 +317,26 @@ function App() {
           localStorage.removeItem("chat");
           setSessionId("");
           setMessages([]);
-          throw new Error("Session expired. Please refresh and try again.");
+          const msg = "Session expired. Please refresh and try again.";
+          setError(msg);
+          throw new Error(msg);
         }
-        throw new Error(`Chat request failed (${res.status})`);
+        // Try to extract structured error from backend JSON
+        let errDetail = `Chat request failed (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body && (body.detail || body.error || body.message)) {
+            errDetail = String(body.detail ?? body.error ?? body.message);
+          } else {
+            // fallback to text
+            const txt = await res.text();
+            if (txt) errDetail = txt;
+          }
+        } catch (e) {
+          // ignore parse errors
+        }
+        setError(errDetail);
+        throw new Error(errDetail);
       }
 
       const data: unknown = await res.json();
@@ -334,8 +366,8 @@ function App() {
       setMessages(traceMessages);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error contacting server";
-      setMessages(prev => [...prev, { role: "assistant", content: `Error contacting server: ${message}` }]);
       console.error(err);
+      setError(message);
     } finally {
       // Always stop loading spinner.
       setLoading(false);
@@ -375,6 +407,14 @@ function App() {
           frontend: v{APP_VERSION}
         </span>
       </h1>
+
+      <Show when={error()}>
+        <div style={{ padding: '8px', background: '#ffe6e6', color: '#800', 'border-radius': '6px', margin: '8px 0' }}>
+          <strong>Error:</strong>
+          <span style={{ 'margin-left': '8px' }}>{error()}</span>
+          <button style={{ float: 'right' }} onClick={() => setError(null)}>Dismiss</button>
+        </div>
+      </Show>
 
       {/* Conversation timeline */}
       <div id="messages">

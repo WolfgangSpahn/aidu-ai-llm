@@ -13,11 +13,25 @@ with:
 pip install aidu-ai-llm aidu-support
 ```
 
+create a `.env` file with your OpenAI API key in your home directory:
+
+```bash
+OPENAI_API_KEY=sk-...
+```
+
 then run the example app:
 
 ```bash
 aidu-ai-llm-example
 ```
+
+if your sys admin does not allow to run executables from `site-packages`, you can also run the app directly:
+
+```bash
+python -m aidu.ai.llm.demo.app
+```
+
+and ctrl click on message http://localhost:8000 to see the chat interface.
 
 ## Development Prerequisites
 
