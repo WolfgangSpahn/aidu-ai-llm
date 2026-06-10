@@ -16,7 +16,7 @@ pip install aidu-ai-llm aidu-support
 then run the example app:
 
 ```bash
-aidu-llm-example
+aidu-ai-llm-example
 ```
 
 ## Development Prerequisites

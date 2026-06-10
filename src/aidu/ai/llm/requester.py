@@ -14,10 +14,11 @@ from ast import TypeAlias
 import os
 import json
 import logging
+import sys
 import time
-from uuid import uuid4
+from typing import get_origin
 
-from aidu.ai.core.processor_result import AgentResult
+from aidu.ai.core.agent_result import AgentResult
 from rich.logging import RichHandler
 from rich.console import Console
 
@@ -80,14 +81,20 @@ class LLMRequester:
         self.client = client
         self.tools = tools or []
         self.function_lookup = {}
-        self.target = target
-        if self.target == None:
-            logger.warning(f"No target specified for LLMRequester {self} - you can not use ask(...) with ask_config.route_mode==True.")
-            self.target = "next_agent"
+
+        # Prefer an explicit target argument, otherwise fall back to class default
+        if target is None:
+            self.target = getattr(self.__class__, "target", None)
+        else:
+            self.target = target
+
+        if self.target is None and self.result_type == AgentResult:
+            sys.exit("LLMRequester with AgentResult result_type requires a target to be specified.")
 
         resolved_template = prompt_template if prompt_template is not None else self.prompt_template
         assert resolved_template, "No prompt template provided for LLMRequester"
 
+        # prompter holds prompt template and current arguments
         self.prompter = Prompter(
             prompt_template=resolved_template,
             prompt_args=prompt_args,
@@ -95,14 +102,23 @@ class LLMRequester:
         assert self.prompter.prompt_builder, "Failed to initialize Prompter with the provided template."
 
     def register(self, name, fn):
+        """
+        Register a function for the LLM to call. The function should accept a Context as its first argument, 
+        followed by any arguments specified in the tool definition. The function must return a tuple of (result, Context), 
+        where result is either a Message or AgentResult depending on the agent's configuration.
+        """
         self.function_lookup[name] = fn
 
     def build_system_prompt(self, prompt_params=None):
-        """Build and return the system message list."""
+        """
+        Build and return a system message singleton.
+        """
         return self.prompter.build_system_prompt(prompt_params)
 
     def update_system_prompt(self, context, prompt_params=None):
-        """Replace the system message in context with a freshly built one."""
+        """
+            Replace the system message at context.trace.messages[0] with a freshly built one.
+        """
         return self.prompter.update_system_prompt(context, prompt_params)
 
     @staticmethod
@@ -166,7 +182,7 @@ class LLMRequester:
         )
         return context
 
-    def ask(self, message, context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
+    def ask(self, message: Message, context: Context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
         """
         Execute a single LLM request.
 
@@ -201,17 +217,22 @@ class LLMRequester:
         Function calls are returned but not executed automatically.
         """
 
-        # assure that the first message in the trace is always the system prompt,
+        # ----------------------------------------
+        # sanity checks
+        # ----------------------------------------
+
         if not context.trace.messages or context.trace.messages[0]["role"] != "system":
             logger.error("Context trace must start with a system message. Please build and prepend the system prompt to the trace before calling ask().")
             raise ValueError("Context trace must start with a system message.")
 
-        # and update it with current params if needed
+        # ----------------------------------------
+        # update system prompt with params
+        # ----------------------------------------
 
         if ask_params:
             context = self.update_system_prompt(context, prompt_params=ask_params)
 
-        # Inject instance-level tools into the per-call config.
+        # lnject instance-level tools into the per-call config. TODO: Means what?
         from dataclasses import replace as dataclass_replace
 
         if ask_config:
@@ -224,8 +245,18 @@ class LLMRequester:
                 tools=self.tools,
             )
 
+        # ----------------------------------------
+        # Call the LLM client
+        # ----------------------------------------  
         _t0 = time.perf_counter()
+
+        logger.warning(f"client ask() called with message: {message} and system message:\n{context.get_system_message()['content']}")
+        logger.warning(f"- this functions available for call: {list(self.function_lookup.keys())}")
         response = self.client.ask(message, context, config=ask_config)
+
+        # ----------------------------------------
+        # update context with usage data
+        # ----------------------------------------
         context.control.duration = time.perf_counter() - _t0
 
         prompt_tokens = int(response.get("prompt_tokens", 0) or 0)
@@ -242,36 +273,62 @@ class LLMRequester:
             "cost_usd": cost_usd,
         }
 
-        # we got a function call request from the LLM, let's call the registered function and update the context accordingly, then attach the
-        # function result to the response for potential use in the next turn or by the caller.
-        fc = response.get("function_call")
-        if fc:
-            logger.info(f"LLM requests function call: {fc['name']}({fc['arguments']})")
-            fn = self.function_lookup.get(fc["name"])
-            args = json.loads(fc["arguments"])
+        # -----------------------------------------  
+        # process response and opt. function calls
+        # -----------------------------------------
+
+        msg_content = response.get("content", "")
+
+        fc_result = response.get("function_call")
+        
+        if fc_result:
+            # for a function call, our main response content is the function call itself
+            logger.info(f"LLM requests function call: {fc_result['name']}({fc_result['arguments']})")
+            fn = self.function_lookup.get(fc_result["name"])
+            args = json.loads(fc_result["arguments"])
 
             if fn:
-                result = fn(context=context, **args)
+                # call the function and expect it to return a tuple of (result_type, Context)
+                payload, context = fn(context=context, **args)
+                logger.warning(self.result_type)
+                origing_type = get_origin(self.result_type) or self.result_type
+                assert isinstance(payload, origing_type), f"Function call '{fc_result['name']}' must return {self.result_type.__name__}"
 
-                assert isinstance(result, tuple) and len(result) == 2, f"Function call '{fc['name']}' must return (Message|AgentResult, Context)"
+                # sometime we get a content message on top
+                msg_artifact = TextArtifact(producer=self.id, step=context.step, content=msg_content)
 
-                payload, context = result
+                # add additional content according to the type of the payload
+                if isinstance(payload, AgentResult):
+                    payload.artifacts.insert(0, msg_artifact)
 
-                assert isinstance(payload, self.result_type), f"Function call '{fc['name']}' must return {self.result_type.__name__}"
-
+                elif isinstance(payload, dict):
+                    payload["content"] = (
+                        payload.get("content", "") + "\n\n" + msg_content
+                    ).strip()
+                else:
+                    raise TypeError(
+                        f"Unsupported payload type: {type(payload).__name__}"
+                    )
                 return payload, context
-            
-        # TODO: NOW WE NEED TO INJECT _fn_result into the response in the function call
+
+        # -----------------------------------------
+        # post-process response
+        # -----------------------------------------
 
         if self.result_type == AgentResult:
+            # for a non function-call response and being agentic we want to return an AgentResult with the content as artifact and 
+            # a recommendation to continue the agent loop.
+
+
             return (
                 AgentResult(
-                    artifacts=[TextArtifact(producer=self.id, step=context.step, content=response.get("content", ""))],
-                    recommendations=[Recommendation(target=self.target, utility=1.0)],
+                    artifacts=[TextArtifact(producer=self.id, step=context.step, content= msg_content)],
+                    recommendations=[Recommendation(target=self.target, continuations=self.continuations, utility=1.0)],
                 ),
-                context,
+                context
             )
         else:
+            # otherwise just return the message and context for the caller to handle as they see fit
             return response, context
 
     def talk(self, message, context, run_params=None):

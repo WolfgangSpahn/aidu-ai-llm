@@ -9,7 +9,7 @@ from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import AskConfig
 import asyncio
 
-from aidu.ai.llm.assistants.mathTutor import MathTutor
+from aidu.ai.llm.assistants.mathTutor_ass import MathTutor
 from aidu.ai.llm.solver.MathSolver import MathSolver
 from aidu.ai.core.hookspecs import hookimpl, HookSpecs
 from aidu.support.filesystem.search import find_up

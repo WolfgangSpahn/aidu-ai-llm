@@ -33,7 +33,7 @@ from rich.console import Console
 
 
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.assistants.mathTutor import MathTutor
+from aidu.ai.llm.assistants.mathTutor_ass import MathTutor
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
 from aidu.ai.llm.client import Context, Trace, State
 
@@ -93,7 +93,10 @@ logger.info("✓ CORS enabled for all origins")
 MODEL = "gpt-4o-mini"
 SYSTEM_PROMPT = "You are a helpful assistant."
 DEFAULT_ACTOR = "MathTutor"
-WEB_DIST_DIR = FsPath("web/dist")
+WEB_DIR = FsPath(__file__).parent / "web"
+logger.info("WEB_DIR = %s", WEB_DIR)
+logger.info("exists = %s", WEB_DIR.exists())
+
 
 # Registry for actor classes. Add new actors here as they are introduced.
 ACTOR_REGISTRY = {
@@ -200,7 +203,9 @@ def _resolve_frontend_index() -> FsPath | None:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
-
+@app.get("/")
+def root():
+    return FileResponse(WEB_DIR / "index.solidjs.html")
 
 @app.post(
     "/sessions",
@@ -355,8 +360,11 @@ def frontend_index() -> FileResponse:
     return FileResponse(index_file)
 
 
-app.mount("/", StaticFiles(directory="web/dist", html=True))
-
+app.mount(
+    "/",
+    StaticFiles(directory=str(WEB_DIR), html=True),
+    name="frontend",
+)
 
 def main():
     uvicorn.run(

@@ -160,6 +160,12 @@ class Context(BaseModel):
     def __str__(self):
         return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
 
+    def get_system_message(self) -> Message | None:
+        """Convenience method to get the initial system message from the trace, if present."""
+        if self.trace.messages and self.trace.messages[0].get("role") == "system":
+            return self.trace.messages[0]
+        return None
+
     def pretty(self, console: Console):
         """Pretty-print the context using Rich panels for a boxed view."""
 

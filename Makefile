@@ -12,6 +12,10 @@ SMOKE_MODULES=\
 
 include ../aidu-dev-tools/python-package.mk
 
+
+web.install:                             ## Install web dependencies
+	cd web && npm install
+
 web.build:                               ## Build frontend and copy into package
 	cd web && $(MAKE) build
 

@@ -27,7 +27,7 @@ class StudentInfo(BaseModel):
 
 
 class MathTutor(LLMAssistant):
-    """A math tutor agent with function calls for solving problems and tracking student progress."""
+    """A math tutor assistant with function calls for solving problems and tracking student progress."""
 
     # System prompt with flexible placeholders that can be filled via prompt_args
     # Unfilled placeholders will remain as {placeholder} for later customization
@@ -80,10 +80,7 @@ class MathTutor(LLMAssistant):
             if not engine:
                 raise ValueError("Symbolic engine not available")
 
-            result, context = engine.ask(
-                {"role": "solver", "content": problem},
-                context=context,
-            )
+            result, context = engine.evaluate(problem, context)
 
             # Store the full result in context (type, expression, result, latex, message)
             context.state.data["solution"] = result
@@ -98,7 +95,7 @@ class MathTutor(LLMAssistant):
 
         # Log updated context for tracking conversation history
         logger.info(f"Context updated in fc_solve_math_problem: {context.state.data}")
-        # Return both message (for user) and context (for LLM context)
+        logger.info(f"Returning message: {message}")
         return message, context
 
     def fc_student_completed(self, context: Context, student: StudentInfo) -> tuple[Message, Context]:
@@ -118,6 +115,7 @@ class MathTutor(LLMAssistant):
         # Log the context update
         logger.info(f"Context updated in fc_student_completed: {context.state.data}")
         # Return confirmation and updated context
+        logger.info(f"Returning message: {message}")
         return message, context
 
 

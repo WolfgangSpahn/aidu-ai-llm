@@ -5,7 +5,9 @@ from typing import Any
 
 
 class Recommendation(BaseModel):
-    target: str
+    target: Any
+
+    continuations: list[Any] = Field(default_factory=list)
 
     utility: float = 0.0
 

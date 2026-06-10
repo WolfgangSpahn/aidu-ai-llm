@@ -1,8 +1,7 @@
-from aidu.ai.core.artifacts import SymbolicArtifact
-from aidu.ai.llm.agent import UtilityAgent
-from aidu.ai.symbolic.engine import Engine
-
+import logging
 import re
+
+from rich.console import Console
 
 from sympy import symbols, solve, diff, latex, nsimplify
 from sympy.parsing.sympy_parser import (
@@ -11,6 +10,21 @@ from sympy.parsing.sympy_parser import (
     parse_expr,
     standard_transformations,
 )
+
+from json import dumps
+
+from aidu.ai.core.artifacts import SymbolicArtifact
+from aidu.ai.core.context import Context
+from aidu.ai.llm.agent import UtilityAgent
+from aidu.ai.core.agent_result import AgentResult
+
+
+
+from aidu.ai.symbolic.engine import Engine
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -143,7 +157,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Create explanation message showing the problem and solution
             message = f"Solving ${expr_latex} = 0$ for ${var_name}$: ${var_name} = {solutions_latex}$ with SymPy."
             # Return with type and all components
-            return {"type": "solve", "expression": str(expr), "result": str(solutions), "latex": solutions_latex, "message": message}
+            return {"type": "solve", "expression": str(problem), "result": str(solutions), "latex": solutions_latex, "message": message}
         else:
             raise ValueError("Invalid solve syntax. Use: solve(expression, variable)")
     # CASE 3: Equation solving (contains = sign, e.g., "2x + 3 = 7")
@@ -178,74 +192,60 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
 
 
 class SymbolicSolver(UtilityAgent, Engine):
-    process = staticmethod(solve_math_problem_with_sympy)
+    process = staticmethod(solve_math_problem_with_sympy)  # Engine pattern
 
-    def evaluate(self, input, context, config=None):
-        result = self.process(input)
-        return result, context
+    def run(self, artifact: SymbolicArtifact, context: Context) -> tuple[AgentResult, Context]:  # UtilityAgent pattern
+        logger.debug(f"input Artifact: {artifact}")
+        output = self.process(artifact.content)
 
-    def run(self, artifact, context):
-        input = artifact["content"]
-        output = self.evaluate(input, context)
-        artifact = SymbolicArtifact(producer=self.id, step=context.step, content=output)
-        return self.result([artifact], context)
+        output_str = dumps(output, indent=2)
+        logger.debug(f"SymbolicSolver output str: {output_str}")
+
+        result = output.get("result", "no result key")
+
+        # logger.debug(f"SymbolicSolver result: {result.keys()}")
+        # logger.debug(f"SymbolicSolver result: {dumps(result, indent=2)}")
+        # # ----------------------------------------------------------
+        # # Harmonized route message
+        # # ----------------------------------------------------------
+
+        # advance the context step and produce a single artifact result
+
+        context.step = context.step + 1
+        artifact = SymbolicArtifact(producer=self.id, step=context.step, content=result)
+
+        # UtilityAgent.result expects artifacts as separate args, so pass the
+        # artifact directly and return (result, context) to match repository convention.
+        return self.result(artifact), context
 
 
-# ---------------------------------------------------------------------------
-# Smoke test
-# ---------------------------------------------------------------------------
+def smoke_test(solver, problem):
+    """Run a simple smoke test to verify the MathSolver works end-to-end."""
 
+    result, context = solver.run(artifact=SymbolicArtifact(producer="test", step=0, content=problem), context=Context())
+    logger.debug(f"Run result: {result}")
+    #
+    # artifact = SymbolicArtifact(producer="test", step=0, content=result.content)
 
-def run_smoke_test():
-
-    from rich.console import Console
-    from rich.table import Table
-
-    from aidu.ai.core.context import Context
-
-    console = Console()
-
-    solver = SymbolicSolver()
-
-    problems = [
-        "diff(7x^2 + 3x - 5, x)",
-        "solve(2x + 3, x)",
-        "2x + 3 = 7",
-        "7x^2 + 3x - 5",
-    ]
-
-    context = Context()
-
-    console.rule("[bold cyan]SymbolicSolver Smoke Test[/bold cyan]")
-
-    table = Table(
-        show_header=True,
-        header_style="bold cyan",
-    )
-
-    table.add_column(
-        "problem",
-        style="yellow",
-    )
-
-    table.add_column(
-        "response",
-        style="white",
-    )
-
-    for problem in problems:
-
-        artifact = SymbolicArtifact(producer="test", step=context.step, content=problem)
-
-        response, context = solver.run(artifact, context)
-
-        table.add_row(
-            problem,
-            response["content"],
-        )
-
-    console.print(table)
+    # # we should get a structured response with the solution to the math problem
+    # # rendering the json in content
+    return result.artifacts, result.recommendations
 
 
 if __name__ == "__main__":
-    run_smoke_test()
+    console = Console()
+    # rich logging setup
+    from rich.logging import RichHandler
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[RichHandler(console=console)])
+
+    console.rule("[bold cyan]SymbolicSolver Smoke Test[/bold cyan]")
+    solver = SymbolicSolver()
+    polynomial = "7x^2 + 3x - 5"
+    problem = f"solve({polynomial}, x)"
+    console.print(f"Testing SymbolicSolver with problem: [bold yellow]{problem}[/bold yellow]")
+    artifacts, recommendations = smoke_test(solver, problem=problem)
+    logger.debug(f"Raw smoke test result: {artifacts}")
+    console.rule(f"Smoke Test Result: [bold green]{artifacts[0].content}[/bold green]")
+    # result = set(raw.get("result", []))
+    # console.print(f"Solver result: [bold cyan]{result}[/bold cyan]")

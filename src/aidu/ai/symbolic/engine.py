@@ -1,26 +1,11 @@
 # engine.py
 
-from abc import ABC, abstractmethod
-
-from aidu.ai.core.context import (
-    Message,
-)
+from abc import ABC
 
 
 class Engine(ABC):
-    role: str = "engine"
+    # has a static method called process that takes an input and returns an output
+    process = staticmethod(lambda input, **kwargs: input)
 
-    def build_system_prompt(self, **kwargs) -> list[Message]:
-        """
-        Build initial system messages.
-        """
-        return [{"role": "system", "content": "Symbolic math engine"}]
-
-    @abstractmethod
-    def ask(
-        self,
-        message,
-        context,
-        config=None,
-    ):
-        raise NotImplementedError
+    def evaluate(self, input, context, config=None):
+        self.process(input, context=context, config=config)
