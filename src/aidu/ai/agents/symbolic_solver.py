@@ -19,7 +19,6 @@ from aidu.ai.llm.agent import UtilityAgent
 from aidu.ai.core.agent_result import AgentResult
 
 
-
 from aidu.ai.symbolic.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -203,19 +202,9 @@ class SymbolicSolver(UtilityAgent, Engine):
 
         result = output.get("result", "no result key")
 
-        # logger.debug(f"SymbolicSolver result: {result.keys()}")
-        # logger.debug(f"SymbolicSolver result: {dumps(result, indent=2)}")
-        # # ----------------------------------------------------------
-        # # Harmonized route message
-        # # ----------------------------------------------------------
-
-        # advance the context step and produce a single artifact result
-
         context.step = context.step + 1
         artifact = SymbolicArtifact(producer=self.id, step=context.step, content=result)
 
-        # UtilityAgent.result expects artifacts as separate args, so pass the
-        # artifact directly and return (result, context) to match repository convention.
         return self.result(artifact), context
 
 

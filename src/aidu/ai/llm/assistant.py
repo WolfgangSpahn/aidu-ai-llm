@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-
 class LLMAssistant(LLMFcRequester):
     """
     LLMAssistant extends LLMFcRequester with automatic schema generation for function calls.
@@ -76,14 +75,12 @@ class LLMAssistant(LLMFcRequester):
         tools = tutor.schema()  # Auto-generated from fc_* methods
         fnames = tutor.fnames()  # ["solve_problem"]
     """
+
     result_type = Message
- 
+
     @property
     def id(self) -> str:
         return self.__class__.__name__
-
-
-
 
     capability_specs: dict[str, type | object | None] = {}
 
@@ -172,4 +169,3 @@ class LLMAssistant(LLMFcRequester):
         on_session_end()
 
         return context
-

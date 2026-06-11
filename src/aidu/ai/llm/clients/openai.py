@@ -9,6 +9,7 @@ OpenAI LLM client implementation.
 
 import logging
 import os
+import sys
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -171,6 +172,25 @@ class OpenAIClient(Client):
 
         message = clean_message(message)
         return message
+
+
+def make_openai_client(model="gpt-4o-mini", config={}):
+    """
+    Helper function to create an OpenAIClient with environment variable loading.
+    """
+
+    env_path = find_up(".env")
+    if not env_path:
+        logger.error("No .env file, even up to root directory, found. Make sure to create one following the .env_example.")
+        sys.exit(1)
+    else:
+        logger.info("Loading environment variables from %s", env_path)
+    load_dotenv(env_path)
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    assert api_key, "Missing OPENAI_API_KEY in .env"
+
+    return OpenAIClient("gpt-4o-mini", config=config, api_key=api_key)
 
 
 # --------------------------------------------------------------------------------------------------------------

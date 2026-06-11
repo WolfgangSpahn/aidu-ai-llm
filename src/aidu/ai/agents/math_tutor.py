@@ -12,18 +12,17 @@ from rich.console import Console
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.recommendation import Recommendation
-from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact
+from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact, Artifact
 from aidu.support.regex.validate import assert_valid_sympy_problem
 
 
 from aidu.support.filesystem.search import find_up
-from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.agent import WorkflowAgent, UserInput
+from aidu.ai.llm.agent import Agent, WorkflowAgent, UserInput
 from aidu.ai.llm.fc_requester import LLMFcRequester
 
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -51,11 +50,21 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
     #   messages = tutor.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
 
     prompt_template = textwrap.dedent("""\
-        You are a helpful and patient math tutor {tutor_name} for the area {focus_areas}.
+        You are a helpful and patient math tutor {tutor_name} for the area {focus_area}.
                                       
         Your goal is to help students at {level}to understand mathematical concepts and solve problems step by step.
                                       
-        Here the summary of the task so far: {dialogue_history} and the students progress: {student_progress}. Here our current assessment of the student's beliefs: {student_beliefs}.
+        Here the summary of the task so far: 
+                                      
+        {history} 
+        
+        and the students progress: 
+                                      
+        {student_progress}. 
+                                      
+        Here our current assessment of the student's beliefs: 
+                                      
+        {student_beliefs}.
 
         When responding:
         - never output more than 3 sentences at a time                 
@@ -71,23 +80,14 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
                   
         """).strip()
 
-    def run(self, artifact: SymbolicArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
+    def run(self, artifact: TextArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
 
-        # convert from instance to class if agents are passed as instances; otherwise assume they are already classes
+        # validate that our target and continuations are present in the provided agents list, if any
         if agents is not None:
-            agents = [agent.__class__ if isinstance(agent, WorkflowAgent) else agent for agent in agents]
+            self.validate_target_continuations_against_agents(agents)
 
-        if agents is not None:
-            self.validate_agents(agents)
-
-        logger.debug(f"MathTutor received artifact: {artifact}")
-        # Build system prompt with dynamic content from context
-        message = {"role": "user", "content": artifact.content}
-        result, context = self.ask(message, context)
-        logger.debug(f"returns artifacts: {result.artifacts}")
-        logger.debug(f"returns recommendations: {result.recommendations}")
-
-        return result, context
+        # ask the LLM using standard LLMAgent patterns
+        return self.ask(Message(role="user", content=artifact.content), context)
 
     def fc_route_symbolic_solver(self, context: Context, problem: str) -> tuple[AgentResult, Context]:
         """
@@ -125,17 +125,13 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
                 problem = str(problem)
             assert_valid_sympy_problem(problem)
 
-            default_target = SymbolicSolver
-  
-
             # ----------------------------------------------------------
-            # Build Artifact and Recommendation for routing to the symbolic solver
+            # Return data and routing information
             # ----------------------------------------------------------
 
             artifact = SymbolicArtifact(producer=producer, step=context.step, content=problem)
-            recommendation = Recommendation(target=default_target, continuations=[], utility=1.0, rationale="symbolic computation requested")
+            recommendation = Recommendation(target=SymbolicSolver, continuations=[UserInput], utility=1.0, rationale="symbolic computation requested")
 
-            # Return an AgentResult containing the artifact and recommendation
             return self.result([artifact], [recommendation]), context
 
         except Exception as e:
@@ -144,16 +140,22 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
             # ----------------------------------------------------------
 
             logger.exception("fc_route_symbolic_solver failed")
-            error_target = MathTutor
 
             artifact = SymbolicArtifact(producer=producer, step=context.step, content=str(e))
-            recommendation = Recommendation(target=error_target, continuations=[], utility=1.0, rationale="error in processing symbolic problem")
+            recommendation = Recommendation(target=MathTutor, continuations=[], utility=1.0, rationale="error in processing symbolic problem")
 
             return self.result([artifact], [recommendation]), context
 
+
+class MathUserInput(UserInput):
+    target = MathTutor
+    continuations = []
+
+
 # late bind self-reference and other classes
-MathTutor.target = UserInput
-MathTutor.continuations = [MathTutor, UserInput]
+MathTutor.target = MathUserInput
+MathTutor.continuations = []  # [MathTutor, MathUserInput]
+
 
 def smoke_test(console):
 
@@ -174,10 +176,9 @@ def smoke_test(console):
         target = MathTutor
 
     agents = [MathTutor(client=client), UserInputMath(), SymbolicSolver()]
-    agents_dict = {     agent.__class__: agent  for agent in agents }
+    agents_dict = {agent.__class__: agent for agent in agents}
 
     starting_agent = agents_dict[MathTutor]
-
 
     # test symbolic solver function call with a sample problem
     problem = "Give me x for this equations: x**2 - 4 using sympy function call"
@@ -191,11 +192,9 @@ def smoke_test(console):
         "student_beliefs": "",
     }
 
-
     result, context = starting_agent.run(
-        TextArtifact(producer="user", step=0, content=problem), 
-        Context(trace=Trace(messages=starting_agent.build_system_prompt(prompt_params))), 
-        agents=agents)
+        TextArtifact(producer="user", step=0, content=problem), Context(trace=Trace(messages=starting_agent.build_system_prompt(prompt_params))), agents=agents
+    )
 
     return result, context
 
@@ -216,8 +215,3 @@ if __name__ == "__main__":
     console.print(f"Final artifactst: {result.artifacts}")
     console.print(f"Final recommendations: {result.recommendations}")
     console.print(f"Final context: {context}")
-
-
-# Assign class references for target and continuations to use identity-based validation
-MathTutor.target = MathTutor
-MathTutor.continuations = [SymbolicSolver]

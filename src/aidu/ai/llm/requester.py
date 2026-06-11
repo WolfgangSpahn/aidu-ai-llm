@@ -103,8 +103,8 @@ class LLMRequester:
 
     def register(self, name, fn):
         """
-        Register a function for the LLM to call. The function should accept a Context as its first argument, 
-        followed by any arguments specified in the tool definition. The function must return a tuple of (result, Context), 
+        Register a function for the LLM to call. The function should accept a Context as its first argument,
+        followed by any arguments specified in the tool definition. The function must return a tuple of (result, Context),
         where result is either a Message or AgentResult depending on the agent's configuration.
         """
         self.function_lookup[name] = fn
@@ -117,7 +117,7 @@ class LLMRequester:
 
     def update_system_prompt(self, context, prompt_params=None):
         """
-            Replace the system message at context.trace.messages[0] with a freshly built one.
+        Replace the system message at context.trace.messages[0] with a freshly built one.
         """
         return self.prompter.update_system_prompt(context, prompt_params)
 
@@ -247,7 +247,7 @@ class LLMRequester:
 
         # ----------------------------------------
         # Call the LLM client
-        # ----------------------------------------  
+        # ----------------------------------------
         _t0 = time.perf_counter()
 
         logger.warning(f"client ask() called with message: {message} and system message:\n{context.get_system_message()['content']}")
@@ -273,14 +273,14 @@ class LLMRequester:
             "cost_usd": cost_usd,
         }
 
-        # -----------------------------------------  
+        # -----------------------------------------
         # process response and opt. function calls
         # -----------------------------------------
 
         msg_content = response.get("content", "")
 
         fc_result = response.get("function_call")
-        
+
         if fc_result:
             # for a function call, our main response content is the function call itself
             logger.info(f"LLM requests function call: {fc_result['name']}({fc_result['arguments']})")
@@ -302,13 +302,9 @@ class LLMRequester:
                     payload.artifacts.insert(0, msg_artifact)
 
                 elif isinstance(payload, dict):
-                    payload["content"] = (
-                        payload.get("content", "") + "\n\n" + msg_content
-                    ).strip()
+                    payload["content"] = (payload.get("content", "") + "\n\n" + msg_content).strip()
                 else:
-                    raise TypeError(
-                        f"Unsupported payload type: {type(payload).__name__}"
-                    )
+                    raise TypeError(f"Unsupported payload type: {type(payload).__name__}")
                 return payload, context
 
         # -----------------------------------------
@@ -316,16 +312,15 @@ class LLMRequester:
         # -----------------------------------------
 
         if self.result_type == AgentResult:
-            # for a non function-call response and being agentic we want to return an AgentResult with the content as artifact and 
+            # for a non function-call response and being agentic we want to return an AgentResult with the content as artifact and
             # a recommendation to continue the agent loop.
-
 
             return (
                 AgentResult(
-                    artifacts=[TextArtifact(producer=self.id, step=context.step, content= msg_content)],
+                    artifacts=[TextArtifact(producer=self.id, step=context.step, content=msg_content)],
                     recommendations=[Recommendation(target=self.target, continuations=self.continuations, utility=1.0)],
                 ),
-                context
+                context,
             )
         else:
             # otherwise just return the message and context for the caller to handle as they see fit

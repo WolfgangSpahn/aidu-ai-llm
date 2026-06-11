@@ -80,6 +80,7 @@ def get_openai_function_schema(func, make_all_required=False):
         "parameters": {"type": "object", "properties": parameters, "required": required_fields},
     }
 
+
 class LLMFcRequester(LLMRequester):
     """
     LLMRequester with automatic OpenAI function-call support.
@@ -131,6 +132,7 @@ class LLMFcRequester(LLMRequester):
             }
             for func in functions
         ]
+
     @classmethod
     def fnames(cls, prefix="fc_"):
         return [
@@ -263,6 +265,8 @@ class LLMFcRequester(LLMRequester):
             cleaned["function_call"] = msg["function_call"]
 
         return cleaned
+
+
 def _smoke_test():
 
     class DummyClient:
@@ -270,7 +274,6 @@ def _smoke_test():
             self.tools = None
 
     class DummyRequester(LLMFcRequester):
-
         prompt_template = "Smoke test"
 
         capability_specs = {
@@ -361,6 +364,7 @@ def _smoke_test():
     assert ctx2 is ctx
 
     print("LLMFcRequester smoke test passed.")
+
 
 if __name__ == "__main__":
     _smoke_test()

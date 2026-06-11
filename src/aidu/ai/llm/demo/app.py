@@ -193,11 +193,10 @@ class EvaluateResponse(BaseModel):
     distribution: list[float]
 
 
-
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.post(
     "/sessions",
@@ -339,24 +338,25 @@ def evaluate(
         logger.error(f"✗ Error in evaluate endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
 app.mount(
     "/assets",
     StaticFiles(directory=WEB_DIR / "assets"),
     name="assets",
 )
 
+
 @app.get("/", include_in_schema=False)
 def frontend_index():
 
     response = FileResponse(WEB_DIR / INDEX_FILE)
 
-    response.headers["Cache-Control"] = (
-        "no-cache, no-store, must-revalidate"
-    )
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
 
     return response
+
 
 def main():
     logger.warning("⚠️  Start app with http://127.0.0.1:8000 or http://localhost:8000")

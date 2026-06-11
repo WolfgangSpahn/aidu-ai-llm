@@ -234,7 +234,6 @@ def run_smoke_test():
     )
 
     for problem in problems:
-
         artifact = SymbolicArtifact(producer="test", step=context.step, content=problem)
 
         response, context = solver.run(artifact, context)
