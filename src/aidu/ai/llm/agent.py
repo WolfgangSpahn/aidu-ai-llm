@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import inspect
+
 from abc import ABC, abstractmethod
 from uuid import uuid4
 
@@ -144,6 +146,8 @@ class UtilityAgent(Agent):
     """
 
     def result(self, artifacts) -> AgentResult:
+        assert isinstance(artifacts, list), "UtilityAgent result must be a list of artifacts"
+        logger.debug(f"{self.id} produced artifacts: {artifacts}")
         return AgentResult(
             artifacts=artifacts,
             recommendations=[],
@@ -162,11 +166,23 @@ class WorkflowAgent(Agent):
     # own targets and continuations in the content of the fc_.... definitions
     target: type[Agent] | None = None
     continuations: list[type[Agent]] = []
+    discovered_fn_routes = set()
+
+    def __init_subclass__(cls):
+        """
+        Create a separate route registry for every WorkflowAgent subclass.
+
+        Without this, all agents would share the same route set inherited
+        from WorkflowAgent.
+    """
+        super().__init_subclass__()
+        cls.discovered_fn_routes = set()
+
 
     def result(
         self,
         artifacts=None,
-        recommendations=None,
+        recommendations=None
     ) -> AgentResult:
 
         return AgentResult(
@@ -174,6 +190,30 @@ class WorkflowAgent(Agent):
             recommendations=recommendations or [],
         )
 
+    def register_recommendation(
+        self,
+        mode,
+        target,
+        continuations=None,
+        utility=1.0,
+        rationale=""
+    ):
+
+        self.__class__.discovered_fn_routes.add(
+            (
+                inspect.currentframe().f_back.f_code.co_name,
+                mode,
+                target,
+                tuple(continuations or []),
+            )
+        )
+
+        return Recommendation(
+            target=target,
+            continuations=continuations or [],
+            utility=utility,
+            rationale=rationale,
+        )
 
 # --------------------------------------------------------------------------
 # Specialized agents for testing and demonstration purposes
@@ -428,3 +468,23 @@ class EchoAgent(WorkflowAgent):
             ),
             context,
         )
+
+class EndAgent(WorkflowAgent):
+    def run(self, artifact: TextArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
+
+        context.step += 1
+
+        artifact = TextArtifact(
+            producer=self.id,
+            step=context.step,
+            content=f"{artifact.content}",
+        )
+
+        return (
+            self.result(
+                artifacts=[artifact],
+                recommendations=[],
+            ),
+            context,
+        )
+    

@@ -145,7 +145,15 @@ class OpenAIClient(Client):
         if response_format:
             kwargs["response_format"] = response_format
 
-        response = self.client.chat.completions.create(**kwargs)
+        # Respect a configured timeout (seconds) if provided in client config
+        timeout = self.config.get("timeout", 30)
+
+        try:
+            response = self.client.chat.completions.create(timeout=timeout, **kwargs)
+        except Exception as exc:
+            logger.exception("OpenAI client request failed")
+            # Return a safe assistant message indicating the error so the caller can proceed
+            return {"role": "assistant", "content": f"Error calling LLM: {exc}", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "model": self.model}
 
         message = response.choices[0].message.model_dump()
         usage = response.usage

@@ -118,6 +118,11 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
         if match:
             # Get expression string and variable name from the regex match
             expr_str, var_name = match.groups()
+            if var_name != "x":
+                raise ValueError("Only variable 'x' is supported for differentiation in this version.")
+            if not expr_str.strip():
+                raise ValueError("Expression for differentiation cannot be empty.")
+
             # Create symbolic variable for differentiation
             var = symbols(var_name)
             # Parse string into SymPy expression (e.g., "7x^2" -> mathematical object)
@@ -132,7 +137,7 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
             # Return result with type indicator and all components
             return {"type": "derivative", "expression": str(expr), "result": str(result), "latex": result_latex, "message": message}
         else:
-            raise ValueError("Invalid diff syntax. Use: diff(expression, variable)")
+            raise ValueError(f"Invalid diff syntax {problem}. Use: diff(expression, variable)")
     # CASE 2: Solve using solve(expr, variable) - finds where expr = 0
     elif problem.startswith("solve("):
         # Extract expression and variable using regex pattern
@@ -140,6 +145,10 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
         if match:
             # Get expression and variable from regex match
             expr_str, var_name = match.groups()
+            if not expr_str.strip():
+                raise ValueError("Expression for solving cannot be empty.")
+            if var_name != "x":
+                raise ValueError("Only variable 'x' is supported for solving in this version.")
             # Create symbolic variable
             var = symbols(var_name)
             # Parse expression string into SymPy object
@@ -193,8 +202,11 @@ def solve_math_problem_with_sympy(problem: str) -> dict:
 class SymbolicSolver(UtilityAgent, Engine):
     process = staticmethod(solve_math_problem_with_sympy)  # Engine pattern
 
-    def run(self, artifact: SymbolicArtifact, context: Context) -> tuple[AgentResult, Context]:  # UtilityAgent pattern
+    def run(self, artifact: SymbolicArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:  # UtilityAgent pattern
         logger.debug(f"input Artifact: {artifact}")
+        # if content is empty raise an error
+        if not artifact.content.strip():
+            raise ValueError("The problem statement cannot be empty.")
         output = self.process(artifact.content)
 
         output_str = dumps(output, indent=2)
@@ -205,7 +217,7 @@ class SymbolicSolver(UtilityAgent, Engine):
         context.step = context.step + 1
         artifact = SymbolicArtifact(producer=self.id, step=context.step, content=result)
 
-        return self.result(artifact), context
+        return self.result([artifact]), context
 
 
 def smoke_test(solver, problem):

@@ -299,7 +299,7 @@ class LLMRequester:
 
                 # add additional content according to the type of the payload
                 if isinstance(payload, AgentResult):
-                    payload.artifacts.insert(0, msg_artifact)
+                    payload.artifacts.append(msg_artifact)
 
                 elif isinstance(payload, dict):
                     payload["content"] = (payload.get("content", "") + "\n\n" + msg_content).strip()

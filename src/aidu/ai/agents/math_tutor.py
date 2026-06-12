@@ -19,7 +19,7 @@ from aidu.support.regex.validate import assert_valid_sympy_problem
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.agent import Agent, WorkflowAgent, UserInput
+from aidu.ai.llm.agent import Agent, WorkflowAgent, UserInput, EndAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
 
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
@@ -49,10 +49,12 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
     #   # Override at prompt building time
     #   messages = tutor.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
 
+    # - When exact symbolic computation is needed, such as derivatives, integrals, solving equations, or simplification, use fc_route_symbolic_solver.
+
     prompt_template = textwrap.dedent("""\
         You are a helpful and patient math tutor {tutor_name} for the area {focus_area}.
                                       
-        Your goal is to help students at {level}to understand mathematical concepts and solve problems step by step.
+        Your goal is to scaffold students at {level} to understand mathematical solution approaches by motivating them to explore different paths to solution, where they can manipulate expressions and equations themselves until they (not you) reach a correct solution.
                                       
         Here the summary of the task so far: 
                                       
@@ -67,16 +69,32 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
         {student_beliefs}.
 
         When responding:
-        - never output more than 3 sentences at a time                 
-        - Use clear, educational language appropriate for the student's level
-        - Format your responses using markdown with:
-            - **Bold** for important mathematical terms
-            - Headers for major sections or steps
-            - Lists for step-by-step solutions
-            - LaTeX expressions for equations (wrapped in $ or $$ delimiters)
-        - Explain the reasoning behind each step, not just the answer
-        - When exact symbolic computation is needed, such as derivatives, integrals, solving equations, or simplification, use fc_route_symbolic_solver.
-        - Encourage students to think critically and ask questions
+
+        * Never output more than 3 sentences at a time.
+        * Following good tutoring practices, ask only one question at a time.
+        * Help the student discover the solution rather than presenting solution steps directly. When the student is unsure, guide them toward productive next observations, calculations, or checks instead of immediately explaining the answer.
+        * Use clear, educational language appropriate for the student's level.
+        * Lead the conversation through a sequence of questions and short explanations that naturally reveal the underlying problem-solving process.
+        * Briefly motivate questions when helpful, but avoid routinely explaining your tutoring strategy or pedagogical intent.
+        * Prefer mathematical transitions such as:
+
+            - "Let's test that idea."
+            - "Let's check whether that works."
+            - "What happens if we try this?"
+            - "Before we continue, let's verify that result."
+        * Encourage students to explain their reasoning and reflect on their choices through questions such as:
+
+        * "How could we check that?"
+        * "Why do you think that works?"
+        * "What information in the problem suggests that step?"
+        * Encourage students to think critically, explore alternatives, and ask their own questions.
+        * Maintain a supportive and collaborative tone, as if working through the problem together.
+        * Format responses using markdown when appropriate:
+
+        * **Bold** for important mathematical terms.
+        * LaTeX expressions for equations (wrapped in $ or $$ delimiters).
+
+
                   
         """).strip()
 
@@ -88,6 +106,7 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
 
         # ask the LLM using standard LLMAgent patterns
         return self.ask(Message(role="user", content=artifact.content), context)
+    
 
     def fc_route_symbolic_solver(self, context: Context, problem: str) -> tuple[AgentResult, Context]:
         """
@@ -130,7 +149,8 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
             # ----------------------------------------------------------
 
             artifact = SymbolicArtifact(producer=producer, step=context.step, content=problem)
-            recommendation = Recommendation(target=SymbolicSolver, continuations=[UserInput], utility=1.0, rationale="symbolic computation requested")
+            recommendation = self.register_recommendation("default", target=SymbolicSolver, continuations=[MathTutor], utility=1.0, rationale="symbolic computation requested")
+            logger.debug(f"Routing to SymbolicSolver with artifact: {artifact} and recommendation: {recommendation}")
 
             return self.result([artifact], [recommendation]), context
 
@@ -142,7 +162,8 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
             logger.exception("fc_route_symbolic_solver failed")
 
             artifact = SymbolicArtifact(producer=producer, step=context.step, content=str(e))
-            recommendation = Recommendation(target=MathTutor, continuations=[], utility=1.0, rationale="error in processing symbolic problem")
+            recommendation = self.register_recommendation("error", target=MathTutor, continuations=[], utility=1.0, rationale="error in processing symbolic problem")
+            logger.debug(f"Routing to MathTutor with artifact: {artifact} and recommendation: {recommendation}")
 
             return self.result([artifact], [recommendation]), context
 
@@ -153,7 +174,7 @@ class MathUserInput(UserInput):
 
 
 # late bind self-reference and other classes
-MathTutor.target = MathUserInput
+MathTutor.target = EndAgent
 MathTutor.continuations = []  # [MathTutor, MathUserInput]
 
 
