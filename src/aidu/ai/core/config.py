@@ -24,3 +24,5 @@ class AskConfig:
 
     # Vendor escape hatch
     vendor_config: dict[str, Any] | None = None
+
+

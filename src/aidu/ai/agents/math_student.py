@@ -28,6 +28,29 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
+# Example of Anchor #42 (High Frustration / Low Engagement)
+anchor_42 = {
+        "vector": [0.8, 0.1, 0.9, 0.2, 0.3, 0.1, 0.2, 0.1],
+        "inner_monologue": "I am completely overwhelmed, angry, and honestly just want to close the laptop and quit.",
+        "behavioral_quirk": "Giving passive-aggressive, monosyllabic answers, intentionally ignoring the teacher's main question, and avoiding punctuation.",
+        "motivation_level": "Extremely low. Survival mode. Zero interest in learning right now."
+    }
+
+anchor_12 = {
+    "vector": [0.2, 0.4, 0.4, 0.2, 0.7, 0.2, 0.4, 0.2],
+
+    "inner_monologue":
+        "This is kind of interesting, but not interesting enough to put in real effort. "
+        "Maybe I'll pay attention if something catches my eye.",
+
+    "behavioral_quirk":
+        "Occasionally asks unexpected questions about side topics, "
+        "but rarely follows through and often drifts back into passive observation.",
+
+    "motivation_level":
+        "Low to moderate. Not actively resisting learning, but not investing much energy either."
+}
+
 class MathStudent(WorkflowAgent, LLMFcRequester):
     """A math student agent simulation."""
 
@@ -51,97 +74,100 @@ class MathStudent(WorkflowAgent, LLMFcRequester):
 
     # - When exact symbolic computation is needed, such as derivatives, integrals, solving equations, or simplification, use fc_route_symbolic_solver.
 
-    prompt_template_old = textwrap.dedent("""\
-            You are the mathematics student {student_name} with a {level} level.
 
-            You are currently working with a tutor in the area {focus_area}.
-                                    
 
-            Problem summary:
+    # ------------------------------------------------------------------------------------------
+    # Math student knowledge state
+    # ------------------------------------------------------------------------------------------
 
-            {history}
 
-            Your progress so far:
+    student_knowledge = textwrap.dedent("""\
+            * The student knows that x represents an unknown value.
+            """)
 
-            {student_progress}
+    student_missing_knowledge = textwrap.dedent("""\
+            * How to solve quadratic equations.
+            * How to factor expressions.
+            * Standard equation-solving procedures.
+            * Algebraic techniques that have not already been introduced by the tutor.
+            """)
 
-            Your current beliefs and learning state:
 
-            {student_beliefs}
-                                      
-            {student_knowledge}
+    # ----------------------------------------------------------------------------------------
+    # Math tutor physical and emotional state
+    # ----------------------------------------------------------------------------------------
 
-            When responding:
+    student_psych = textwrap.dedent("""\
+            [STUDENT PSYCHOLOGICAL STATE]
+            - Inner Monologue: Mostly feeling like "{inner_monologue}" .
+            - Communication Script: You must express this state by {behavioral_quirk}.
+            - Motivation Level: {motivation_level} Do not break character.
+            """)
+    
 
-            * Act consistently with the beliefs and progress described above.
-            * Respond as a student, not as a tutor.
-            * Never reveal information that the student has not yet discovered.
-            * Base your reasoning only on what a student in this state would plausibly know.
-            * If you are confused, uncertain, frustrated, curious, or confident, let those characteristics naturally influence your response.
-            * If you make mistakes, make realistic mathematical mistakes rather than random errors.
-            * If your confidence is low, you may hesitate or ask for clarification.
-            * If your confidence is high, you may commit strongly to an answer, even when it is incorrect.
-            * If guessing is likely, you may propose answers without full justification.
-            * If self-explanation is high, explain your reasoning in your own words.
-            * If help-seeking is high, ask the tutor for guidance.
-            * If curiosity is high, ask conceptual questions.
-            * If frustration is high, show signs of impatience, discouragement, or confusion.
-            * Keep responses concise, typically one to three sentences.
-            * Do not role-play the tutor.
-            * Do not describe your internal beliefs explicitly unless asked.
-            * Speak naturally as a student participating in a tutoring session.
+    narrative_block_mixin = textwrap.dedent("""\
+            [PRIMARY ARCHETYPE]
+            {primary_archetype}                            
+            [SECONDARY ARCHETYPE]
+            {secondary_archetype}                                
+            [MIX BOTH ARCHETYPES]
+            When generating a response, behave approximately {primary_weight:.0%} like the primary archetype and {secondary_weight:.0%} like the secondary archetype.
+            """)
 
-            Respond only with the student's next message.
 
-            """).strip()     
+    def mix_archetypes(self, primary_anchor, secondary_anchor, primary_weight=0.7):
+        """Mix two archetypes based on the primary weight, into a narrative block for the system prompt."""
+        if primary_weight == 1.0:
+            # return only the primary archetype
+            return self.student_psych.format(**primary_anchor)
+        elif primary_weight == 0.0:
+            # return only the secondary archetype
+            return self.student_psych.format(**secondary_anchor)
+        elif primary_weight < 0.5:
+            # if the primary weight is less than 0.5, swap the primary and secondary archetypes
+            primary_anchor, secondary_anchor = secondary_anchor, primary_anchor
+            primary_weight = 1.0 - primary_weight
 
+        # if the primary weight is greater than 0.5, return a mix of both archetypes
+        secondary_weight = 1.0 - primary_weight
+        return self.narrative_block_mixin.format(
+            primary_archetype=self.student_psych.format(**primary_anchor), 
+            secondary_archetype=self.student_psych.format(**secondary_anchor),
+            primary_weight=primary_weight,
+            secondary_weight=secondary_weight
+        )
+
+    
     prompt_template = textwrap.dedent("""\
-            You are realizing a student utterance.
+            You are acting as a student in a classroom simulation. You must strictly adopt the psychological narrative provided below. 
+            Do not try to be a "good student" or helpful if your profile dictates otherwise.
 
-            Your task is not to solve the problem. Your task is to produce a realistic response from this particular student.
-                                      
-            History and context of the tutoring session so far:
-                                      
-            {history}
-                                      
-            Student profile:
-                                      
-            {student_profile}                         
+            {narrative_block}
 
-
-            Knowledge available to the student:
-            
+            [STUDENT'S KNOWLEDGE]     
             {student_knowledge}
-
-
-            Knowledge NOT available to the student:
                                       
-            {student_missing_knowledge}
-
-
-
-            Possible student behaviors:
-                                      
-            {student_behaviors}
-
-            Forbidden behaviors:
-                                      
-            {forbidden_behaviors}
-
-
-            Conversation style:
-                                      
-            {conversation_style}
-                                     
-            {examples}
+            [STUDENT'S MISSING KNOWLEDGE]
+            {student_missing_knowledge}                          
             
-            Important: 
-            
-            {important}
+            [DIALOGUE HISTORY]
+            {dialogue_history}
 
-            Generate only the student's next message.
+            [TEACHER'S PROMPT]
+            {teacher_prompt}
 
-        """).strip()
+            [STUDENT RESPONSE (Stay deeply in character, reflect your inner monologue):]
+            """).strip()
+    
+    def create_dynamic_ask_params(self, context: Context, start: Archetype, target: Archetype, speed: float) -> dict:
+        """Create ask parameters to create a system prompt for the math student agent from behavior path."""
+
+        assert speed >= 0.0 and speed <= 0.1, "Speed must be between 0.0 and 0.1"
+
+
+        # calculate the primary weight based on the speed x steps and context.step.
+        primary_weight = max(0.0, min(1.0, 1.0 - (context.step * speed )))
+
 
     def run(self, artifact: TextArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
 
@@ -149,9 +175,13 @@ class MathStudent(WorkflowAgent, LLMFcRequester):
         if agents is not None:
             self.validate_target_continuations_against_agents(agents)
 
+        ask_params = self.create_dynamic_ask_params(context, start=None, target=None, speed=1.0)
+
         # ask the LLM using standard LLMAgent patterns
-        return self.ask(Message(role="user", content=artifact.content), context)
- 
+        result, context = self.ask(Message(role="user", content=artifact.content), context, ask_params=ask_params)
+
+        return result, context
+
 
 class MathUserInput(UserInput):
     target = MathStudent

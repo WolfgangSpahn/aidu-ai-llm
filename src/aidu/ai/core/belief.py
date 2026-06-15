@@ -1,16 +1,5 @@
 from pydantic import BaseModel, Field
 
-class StudentKnowledge(BaseModel):
-
-    arithmetic: float = 0.2
-    fractions: float = 0.1
-    equations: float = 0.4
-    functions: float = 0.5
-    derivatives: float = 0.8
-    integrals: float = 0.6
-
-from pydantic import BaseModel
-
 
 class StudentKnowledge(BaseModel):
 
@@ -203,6 +192,18 @@ class StudentBelief(BaseModel):
     guessing: float = Field(default=0.5, ge=0.0, le=1.0)
     help_seeking: float = Field(default=0.5, ge=0.0, le=1.0)
 
+
+    def vector(self) -> list[float]:
+        return [
+            self.engagement,
+            self.confidence,
+            self.confusion,
+            self.frustration,
+            self.curiosity,
+            self.self_explanation,
+            self.guessing,
+            self.help_seeking,
+        ]
 
     def to_tutor_text(self) -> str:
 

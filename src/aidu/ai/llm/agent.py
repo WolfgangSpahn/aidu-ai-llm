@@ -10,7 +10,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from aidu.ai.core.agent_result import AgentResult
-from aidu.ai.core.artifacts import Artifact, SymbolicArtifact, TextArtifact
+from aidu.ai.core.artifacts import Artifact, EndArtifact, SymbolicArtifact, TextArtifact
 from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.core.recommendation import Recommendation
 
@@ -39,7 +39,7 @@ class Agent(ABC):
         return self.__class__.__name__
 
     @abstractmethod
-    def run(self, artifact, context=None, agents: list[Agent] | None = None) -> tuple[AgentResult, Context]:
+    def run(self, artifact, context=None, agents: list[Agent] | None = None, ask_params=None) -> tuple[AgentResult, Context]:
         pass
 
     def validate_target_continuations_against_agents(self, agents: list | None = None):
@@ -474,7 +474,7 @@ class EndAgent(WorkflowAgent):
 
         context.step += 1
 
-        artifact = TextArtifact(
+        artifact = EndArtifact(
             producer=self.id,
             step=context.step,
             content=f"{artifact.content}",

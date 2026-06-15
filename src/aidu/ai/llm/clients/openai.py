@@ -130,6 +130,7 @@ class OpenAIClient(Client):
         json_mode = config.json_mode if config else self.config.get("enforce_json", False)
         response_format = {"type": "json_object"} if json_mode else None
 
+
         kwargs = {
             "model": self.model,
             "messages": context.trace.messages + [message],
@@ -147,6 +148,9 @@ class OpenAIClient(Client):
 
         # Respect a configured timeout (seconds) if provided in client config
         timeout = self.config.get("timeout", 30)
+        logger.debug(f"Sending request to OpenAI with model={self.model}, timeout={timeout}s, json_mode={json_mode}, tools={'enabled' if tools else 'none'}")
+        logger.debug(f"Request messages kwargs: {kwargs.keys()}")
+        logger.debug(f"Request messages: {kwargs['messages'][1:]}")
 
         try:
             response = self.client.chat.completions.create(timeout=timeout, **kwargs)

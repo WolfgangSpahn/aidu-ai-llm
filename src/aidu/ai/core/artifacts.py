@@ -64,6 +64,9 @@ class ErrorArtifact(Artifact):
     type: Literal["error"] = "error"
     content: Any
 
+class EndArtifact(Artifact):
+    type: Literal["text"] = "text"
+    content: str
 
 ArtifactType = Annotated[
     TextArtifact | SymbolicArtifact | EvidenceArtifact | BeliefArtifact | ErrorArtifact,

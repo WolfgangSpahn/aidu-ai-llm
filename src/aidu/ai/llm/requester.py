@@ -232,9 +232,11 @@ class LLMRequester:
         if ask_params:
             context = self.update_system_prompt(context, prompt_params=ask_params)
 
-        # lnject instance-level tools into the per-call config. TODO: Means what?
+        # inject instance-level tools into the per-call config
         from dataclasses import replace as dataclass_replace
 
+        # inject self.tools into ask_config for this call, allowing tools to be defined at the agent level 
+        # and not have to be passed in on every call. If ask_config is None, create one with just the tools.
         if ask_config:
             ask_config = dataclass_replace(
                 ask_config,

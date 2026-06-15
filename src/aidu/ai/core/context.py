@@ -11,7 +11,7 @@ from rich import box
 from pydantic import BaseModel, Field
 from typing import Any
 
-from .artifacts import Artifact
+from .artifacts import Artifact, TextArtifact
 
 # role and content are harmonized across providers; all other fields are provider-specific
 Message = dict[str, Any]
@@ -38,7 +38,8 @@ class Trace(BaseModel):
         super().__init__(messages=messages or [])
 
     def __str__(self):
-        return "messages:" + "len=" + str(len(self.messages))
+        trace_messages_str = "\n - ".join(f"{msg}" for msg in self.messages[1:])
+        return f"trace.messages[0].content: \n{self.messages[0]['content']}" f"\ntrace.messages:\n - {trace_messages_str} \n" #, len={len(self.messages)}"
 
     def pretty(self):
         """Return a Group of Rich Panels, one per message.
@@ -158,12 +159,38 @@ class Context(BaseModel):
     artifacts: dict[str, Artifact] = Field(default_factory=dict)
 
     def __str__(self):
-        return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={list(self.artifacts.keys())})"
+        artifacts_str = ", ".join(f"{k}: {v}" for k, v in self.artifacts.items())
+        return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={artifacts_str})"
+    
+    def create_messages_trace(self, last_message_only: bool = False):
+        """Create message traces from artifacts of type TextArtifact."""
+        system_message = self.get_system_message()
+        if system_message is None:
+            self.trace.messages = [None]
+        else:
+            self.trace.messages = [system_message]
+
+        text_artifacts = [artifact for artifact in self.artifacts.values() if isinstance(artifact, TextArtifact)]
+
+        if text_artifacts:
+            if last_message_only:
+                self.trace.messages.append({"role": "assistant", 
+                                            "content": text_artifacts[-1].content})
+            else:
+                for i, artifact in enumerate(self.artifacts.values()):
+                    if isinstance(artifact, TextArtifact):
+                        self.trace.messages.append(
+                            {
+                                "role": "assistant" if i % 2 == 0 else "user", # TODO: improve role assignment logic
+                                "content": artifact.content,
+                            }
+                        )
 
     def get_system_message(self) -> Message | None:
         """Convenience method to get the initial system message from the trace, if present."""
         if self.trace.messages and self.trace.messages[0].get("role") == "system":
             return self.trace.messages[0]
+        logger.error("No system message found in trace; We return None")
         return None
 
     def pretty(self, console: Console):
