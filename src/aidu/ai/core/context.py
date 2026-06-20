@@ -139,7 +139,9 @@ class Control(BaseModel):
 
 
 class Context(BaseModel):
-    """Typed runtime context carrying history, mutable state, and control data."""
+    """
+        Typed runtime context carrying history, mutable state, and control data.
+    """
 
     step: int = 0
 
@@ -162,8 +164,28 @@ class Context(BaseModel):
         artifacts_str = ", ".join(f"{k}: {v}" for k, v in self.artifacts.items())
         return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={artifacts_str})"
     
+    def create_agent_states(self, agents):
+        """
+            Ensure that the context has state entries for all agents, initializing with their default state if not already present. This should be called at the start of a conversation or when new agents are introduced, to ensure that all agents have a place to store their state in the context. It does not overwrite existing state entries, allowing for persistence across turns.
+        """
+        for agent in agents:
+            self.state.data.setdefault(
+                agent.__class__.__name__,
+                getattr(agent, "default_state", {}).copy(),
+            )
+    def check_agents_have_state(self, agents):
+        """
+            Check that the context has state entries for all agents. Raises ValueError if any agent is missing.
+        """
+        for agent in agents:
+            if agent.__class__.__name__ not in self.state.data:
+                raise ValueError(f"Agent '{agent.__class__.__name__}' does not have a state in the context. Please call 'create_agent_states' first.")
+
+
     def create_messages_trace(self, last_message_only: bool = False):
-        """Create message traces from artifacts of type TextArtifact."""
+        """
+            Create message traces from artifacts of type TextArtifact.
+        """
         system_message = self.get_system_message()
         if system_message is None:
             self.trace.messages = [None]
@@ -187,7 +209,9 @@ class Context(BaseModel):
                         )
 
     def get_system_message(self) -> Message | None:
-        """Convenience method to get the initial system message from the trace, if present."""
+        """
+            Convenience method to get the initial system message from the trace, if present.
+        """
         if self.trace.messages and self.trace.messages[0].get("role") == "system":
             return self.trace.messages[0]
         logger.error("No system message found in trace; We return None")

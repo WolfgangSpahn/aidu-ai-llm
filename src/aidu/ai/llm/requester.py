@@ -252,8 +252,8 @@ class LLMRequester:
         # ----------------------------------------
         _t0 = time.perf_counter()
 
-        logger.warning(f"client ask() called with message: {message} and system message:\n{context.get_system_message()['content']}")
-        logger.warning(f"- this functions available for call: {list(self.function_lookup.keys())}")
+        logger.debug(f"client ask() called with message: {message} and system message:\n{context.get_system_message()['content']}")
+        logger.debug(f"- this functions available for call: {list(self.function_lookup.keys())}")
         response = self.client.ask(message, context, config=ask_config)
 
         # ----------------------------------------
@@ -292,7 +292,7 @@ class LLMRequester:
             if fn:
                 # call the function and expect it to return a tuple of (result_type, Context)
                 payload, context = fn(context=context, **args)
-                logger.warning(self.result_type)
+                logger.debug(self.result_type)
                 origing_type = get_origin(self.result_type) or self.result_type
                 assert isinstance(payload, origing_type), f"Function call '{fc_result['name']}' must return {self.result_type.__name__}"
 

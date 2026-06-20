@@ -42,7 +42,7 @@ class PromptBuilder:
             placeholders = self.extract_placeholders()
             for key in prompt_params.keys():
                 if key not in placeholders:
-                    logger.warning(f"Prompt param '{key}' is not a placeholder in the template.")
+                    logger.debug(f"Prompt param '{key}' is not a placeholder in the template.")
             prompt = prompt.format_map(SafeFormat(**prompt_params))
 
         return prompt

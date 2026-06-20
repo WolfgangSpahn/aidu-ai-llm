@@ -169,6 +169,7 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
 
 
 class MathUserInput(UserInput):
+    state_key = MathTutor.__name__  # store user input in context.state.data[MathTutor.__name__]
     target = MathTutor
     continuations = []
 

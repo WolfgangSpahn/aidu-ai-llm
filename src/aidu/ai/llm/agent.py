@@ -15,7 +15,7 @@ from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.core.recommendation import Recommendation
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 class UtilityResult(BaseModel):
@@ -133,7 +133,7 @@ class Agent(ABC):
                             break
 
         if not incoming:
-            logger.info(f"No provided agents list {self.id} in their continuations (no agent continues to '{self.id}')")
+            logger.debug(f"No provided agents list {self.id} in their continuations (no agent continues to '{self.id}')")
 
 
 class UtilityAgent(Agent):
@@ -349,11 +349,58 @@ from aidu.support.regex.micro_parse import compile_prompt_parser
 class UserInput(WorkflowAgent):
     data_prompt = ""
 
-    # def build_prompt(self, context: Context) -> str:
-    #     return self.data_prompt
+    def __new__(cls, *args, **kwargs):
+        if cls is UserInput:
+            raise TypeError(
+                "UserInput is abstract and cannot be instantiated directly"
+            )
+        return super().__new__(cls)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if cls.state_key is None:
+            raise TypeError(
+                f"{cls.__name__} must define state_key"
+            )
+
     
     def build_prompt_context(self, context: Context) -> dict:
-        return context.state.data[self.state_key]
+
+        if self.state_key in context.state.data:
+            return context.state.data[self.state_key]
+
+        available_keys = list(context.state.data.keys())
+        logger.error(f"Expected context.state.data to contain key '{self.state_key}' for {self.__class__.__name__}, but it was not found. Available keys: {available_keys}")
+        raise KeyError(self.state_key)
+
+    def update_state_from_user_input(self, user_input: str, context: Context) -> None:
+        parser = compile_prompt_parser(self.data_prompt)
+        match = parser.match(user_input)
+        if match:
+            context.state.data[self.state_key].update({k: v for k, v in match.groupdict().items() if k != "text"})
+        else:
+            from rich import get_console
+
+            console = get_console()
+            if console is not None:
+                console.print(f"[bold red]Failed to parse user input with prompt template[/bold red]: {self.data_prompt}")
+
+    def sync_target_system_prompt(self, context: Context, agents: list[Agent] | None = None) -> None:
+        if not context.trace.messages or context.trace.messages[0].get("role") != "system":
+            return
+
+        target = getattr(self, "target", None)
+        if not isinstance(target, type):
+            return
+
+        for agent in agents or []:
+            if isinstance(agent, target) and hasattr(agent, "build_system_prompt"):
+                context.trace.messages[0] = agent.build_system_prompt(
+                    prompt_params=context.state.data[self.state_key],
+                )[0]
+                return
+        
 
     def run(self, artifact: Artifact, context: Context, agents: list[Agent] | None = None) -> tuple[AgentResult, Context]:
 
@@ -377,13 +424,8 @@ class UserInput(WorkflowAgent):
             # user_input = console.input(prompt_text + "> ")
             user_input = prompt("", default=prompt_text)
 
-            parser = compile_prompt_parser(self.data_prompt)
-            match = parser.match(user_input)
-            if match:
-                context.state.data[self.state_key].update({k: v for k, v in match.groupdict().items() if k != "text"})
-            else:
-                console.print(f"[bold red]Failed to parse user input with prompt template[/bold red]: {self.data_prompt}")
-
+        self.update_state_from_user_input(user_input, context)
+        self.sync_target_system_prompt(context, agents)
 
         context.step += 1
         context.trace.messages.append(Message(role="user", content=user_input))
