@@ -50,6 +50,16 @@ class SymbolicArtifact(Artifact):
     content: Any
 
 
+class AppletArtifact(Artifact):
+    type: Literal["applet"] = "applet"
+    content: dict[str, Any]
+
+
+class JsonArtifact(Artifact):
+    type: Literal["json"] = "json"
+    content: dict[str, Any]
+
+
 class EvidenceArtifact(Artifact):
     type: Literal["evidence"] = "evidence"
     content: dict[str, Any]
@@ -69,7 +79,7 @@ class EndArtifact(Artifact):
     content: str
 
 ArtifactType = Annotated[
-    TextArtifact | SymbolicArtifact | EvidenceArtifact | BeliefArtifact | ErrorArtifact,
+    TextArtifact | SymbolicArtifact | AppletArtifact | EvidenceArtifact | BeliefArtifact | ErrorArtifact,
     Field(discriminator="type"),
 ]
 
@@ -87,6 +97,10 @@ def create_artifact(artifact_type: str, id: str, producer: str, step: int, conte
         if content is None:
             raise TypeError("symbolic artifact requires non-None 'content'")
         return SymbolicArtifact(id=id, producer=producer, step=step, content=content)
+    elif artifact_type == "applet":
+        if not isinstance(content, dict):
+            raise TypeError(f"applet artifact requires 'content' of type dict, got {type(content).__name__}")
+        return AppletArtifact(id=id, producer=producer, step=step, content=content)
     elif artifact_type == "evidence":
         if not isinstance(content, dict):
             raise TypeError(f"evidence artifact requires 'content' of type dict, got {type(content).__name__}")

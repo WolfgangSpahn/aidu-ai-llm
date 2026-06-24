@@ -430,7 +430,7 @@ class UserInput(WorkflowAgent):
         context.step += 1
         context.trace.messages.append(Message(role="user", content=user_input))
 
-        logger.info(f"COntext is now: {context}")
+        logger.debug(f"COntext is now: {context}")
 
         # console.print(f"\nUserInput Messages: {context.trace.messages}") # NOT SHOWN WHY
 

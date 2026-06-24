@@ -5,21 +5,21 @@ Math tutor agent
 import os
 import logging
 import textwrap
-
+from pprint import pformat
 from dotenv import load_dotenv
 
 from rich.console import Console
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.recommendation import Recommendation
-from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact, Artifact
+from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact, Artifact, AppletArtifact
 from aidu.support.regex.validate import assert_valid_sympy_problem
 
 
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.agent import Agent, WorkflowAgent, UserInput
+from aidu.ai.llm.agent import Agent, EndAgent, WorkflowAgent, UserInput
 from aidu.ai.llm.fc_requester import LLMFcRequester
 
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
@@ -77,7 +77,55 @@ class ChemTutor(WorkflowAgent, LLMFcRequester):
             self.validate_target_continuations_against_agents(agents)
 
         # ask the LLM using standard LLMAgent patterns
-        return self.ask(Message(role="user", content=artifact.content), context)
+        result, context = self.ask(Message(role="user", content=artifact.content), context)
+        logger.warning(result.content())
+        return result, context
+
+    def fc_change_build_an_atom_applet(self, context: Context, protons: int, neutrons: int, electrons: int) -> tuple[AgentResult, Context]:
+        """
+        Use this function call to change the state of the 'build an atom' applet in response to student input.
+        """
+
+        producer = f"{self.id}:fc_change_build_an_atom_applet"
+        try:
+            # ----------------------------------------------------------
+            # Process LLM function call with validation and error handling
+            # ----------------------------------------------------------
+
+
+            if protons is None or neutrons is None or electrons is None:
+                raise ValueError("Missing required parameter: protons, neutrons, or electrons")
+
+            if not isinstance(protons, int) or not isinstance(neutrons, int) or not isinstance(electrons, int):
+                raise ValueError("Parameters must be integers: protons, neutrons, electrons")
+
+            # ----------------------------------------------------------
+            # Return data and routing information
+            # ----------------------------------------------------------
+
+            result_content = f"Applet input: p:{protons},n:{neutrons},e:{electrons}"
+
+            artifact = AppletArtifact(producer=producer, step=context.step, content=result_content)
+            recommendation = self.register_recommendation("default", 
+                                                          target=EndAgent, continuations=[], 
+                                                          utility=1.0, 
+                                                          rationale="Change build an atom applet state requested")
+            logger.debug(f"Routing to Applet with artifact: {artifact} and recommendation: {recommendation}")
+
+            return self.result([artifact], [recommendation]), context
+
+        except Exception as e:
+            # ----------------------------------------------------------
+            # Handle errors gracefully and route to an error target
+            # ----------------------------------------------------------
+
+            logger.exception("fc_change_build_an_atom_applet failed")
+
+            artifact = TextArtifact(producer=producer, step=context.step, content=str(e))
+            recommendation = self.register_recommendation("error", target=EndAgent, continuations=[], utility=1.0, rationale="error in processing symbolic problem")
+            logger.debug(f"Routing to EndAgent with artifact: {artifact} and recommendation: {recommendation}")
+
+            return self.result([artifact], [recommendation]), context
 
 
 class ChemUserInput(UserInput):
@@ -91,5 +139,5 @@ class ChemUserInput(UserInput):
 
 
 # late bind self-reference and other classes
-ChemTutor.target = ChemUserInput
+ChemTutor.target = ChemUserInput # NExt Agent, None for last agent
 ChemTutor.continuations = []  # [ChemTutor, ChemUserInput]

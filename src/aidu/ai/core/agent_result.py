@@ -13,3 +13,6 @@ class AgentResult(BaseModel):
 
     def __str__(self) -> str:
         return f"AgentResult(artifacts={self.artifacts}, recommendations={self.recommendations})"
+    
+    def content(self) -> str:
+        return "\n".join([artifact.content for artifact in self.artifacts if isinstance(artifact.content, str)])
