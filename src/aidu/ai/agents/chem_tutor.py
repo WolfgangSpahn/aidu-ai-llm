@@ -100,10 +100,18 @@ class ChemTutor(WorkflowAgent, LLMFcRequester):
                 raise ValueError("Parameters must be integers: protons, neutrons, electrons")
 
             # ----------------------------------------------------------
-            # Return data and routing information
+            # Return data and routing information aidu-frontend-assets/assets/images/periodic_table_dark.png
             # ----------------------------------------------------------
 
-            result_content = f"Applet input: p:{protons},n:{neutrons},e:{electrons}"
+            result_content = {
+                "applet": "applet-build-an-atom",
+                "command": {
+                    "kind": "set_atom",
+                    "protons": protons,
+                    "neutrons": neutrons,
+                    "electrons": electrons,
+                },
+            }
 
             artifact = AppletArtifact(producer=producer, step=context.step, content=result_content)
             recommendation = self.register_recommendation("default", 
