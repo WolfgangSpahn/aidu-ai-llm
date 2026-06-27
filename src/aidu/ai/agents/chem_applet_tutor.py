@@ -1,5 +1,5 @@
 """
-Domain- and applet-agnostic chemistry applet tutor agent.
+Domain- and applet-aware chemistry LLM tutor agent.
 
 This agent is the generic successor shape for ``chem_tutor.py``. It does not
 hard-code Build-an-Atom, atomic structure, or a fixed applet state schema.
@@ -39,19 +39,6 @@ def _parse_json_object(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
-
-
-def _applet_state_from_content(content: str) -> dict[str, Any]:
-    if not content.startswith("Applet input:"):
-        return {}
-
-    _, _, payload = content.partition("\n")
-    payload = payload.strip()
-    if not payload:
-        return {}
-
-    parsed = _parse_json_object(payload)
-    return parsed or {"raw": payload}
 
 
 def _selected_object_name(info_store: dict[str, Any]) -> str:
@@ -109,12 +96,12 @@ def build_deterministic_applet_feedback(applet_state: Any) -> str | None:
     return f"I see you clicked {selected}. What pattern or property do you notice from that selection?"
 
 
-class RespondToAppletInputAgent(WorkflowAgent):
+class AppletRuleResponder(WorkflowAgent):
     """
-    Deterministic companion agent for applet-only input turns.
+    Deterministic rule responder for applet-only input turns.
 
     It acknowledges the visual applet event and asks one focused reasoning
-    question. LLM tutoring stays in ``ChemAppletTutor``.
+    question. LLM tutoring stays in ``ChemLlmTutor``.
     """
 
     target = EndAgent
@@ -122,15 +109,14 @@ class RespondToAppletInputAgent(WorkflowAgent):
 
     def run(
         self,
-        artifact: TextArtifact,
+        artifact: AppletArtifact,
         context: Context,
         agents=None,
     ) -> tuple[AgentResult, Context]:
         if agents is not None:
             self.validate_target_continuations_against_agents(agents)
 
-        applet_state = _applet_state_from_content(artifact.content)
-        feedback = build_deterministic_applet_feedback(applet_state)
+        feedback = build_deterministic_applet_feedback(artifact.content)
         if not feedback:
             feedback = "I see you changed the applet. What do you notice in the new picture?"
 
@@ -144,22 +130,22 @@ class RespondToAppletInputAgent(WorkflowAgent):
             target=EndAgent,
             continuations=[],
             utility=1.0,
-            rationale="Applet input was handled by the deterministic applet-response agent.",
+            rationale="Applet input was handled by the deterministic rule responder.",
         )
-        logger.warning("RespondToAppletInputAgent.response %s", feedback)
+        logger.warning("AppletRuleResponder.response %s", feedback)
         return self.result([response], [recommendation]), context
 
 
-class ChemAppletTutor(WorkflowAgent, LLMFcRequester):
+class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
     """
     A chemistry tutor for the currently selected curriculum domain and applet.
 
-    The director is expected to update the prompt args/state whenever the user
+    The director is expected to update the prompt args whenever the user
     changes domain. That domain change should also select the corresponding
     applet and applet contract.
     """
 
-    default_state = {
+    default_args = {
         "domain_id": "TODO_DOMAIN_ID",
         "domain_label": "TODO_DOMAIN_LABEL",
         "domain_description": "TODO_DOMAIN_DESCRIPTION",
@@ -245,9 +231,9 @@ class ChemAppletTutor(WorkflowAgent, LLMFcRequester):
 
         state = context.state.data.get(self.__class__.__name__, {})
         if not state:
-            state = context.state.data.get(ChemAppletTutor.__name__, {})
+            state = context.state.data.get(ChemLlmTutor.__name__, {})
         logger.warning(
-            "ChemAppletTutor.run agent_class=%s state_keys=%s domain=%s:%s applet=%s:%s applet_state=%s artifact_prefix=%r",
+            "ChemLlmTutor.run agent_class=%s state_keys=%s domain=%s:%s applet=%s:%s applet_state=%s artifact_prefix=%r",
             self.__class__.__name__,
             sorted(state.keys()),
             state.get("domain_id"),
@@ -258,16 +244,16 @@ class ChemAppletTutor(WorkflowAgent, LLMFcRequester):
             artifact.content[:240],
         )
         result, context = self.ask(Message(role="user", content=artifact.content), context)
-        logger.warning("ChemAppletTutor.response %s", result.content())
+        logger.warning("ChemLlmTutor.response %s", result.content())
         return result, context
 
     def _active_applet_id(self, context: Context) -> str:
         state = context.state.data.get(self.__class__.__name__, {})
         if not state:
-            state = context.state.data.get(ChemAppletTutor.__name__, {})
-        applet_id = state.get("applet_id") or self.default_state["applet_id"]
+            state = context.state.data.get(ChemLlmTutor.__name__, {})
+        applet_id = state.get("applet_id") or self.default_args["applet_id"]
         logger.warning(
-            "ChemAppletTutor.active_applet agent_class=%s applet_id=%s",
+            "ChemLlmTutor.active_applet agent_class=%s applet_id=%s",
             self.__class__.__name__,
             applet_id,
         )
@@ -308,7 +294,7 @@ class ChemAppletTutor(WorkflowAgent, LLMFcRequester):
                 },
             }
             logger.warning(
-                "ChemAppletTutor.applet_command applet=%s command=%r",
+                "ChemLlmTutor.applet_command applet=%s command=%r",
                 result_content["applet"],
                 result_content["command"],
             )
@@ -349,10 +335,10 @@ class ChemAppletTutor(WorkflowAgent, LLMFcRequester):
             return self.result([artifact], [recommendation]), context
 
 
-class ChemAppletUserInput(UserInput):
-    target = ChemAppletTutor
+class ChemLlmUserInput(UserInput):
+    target = ChemLlmTutor
     continuations = []
-    state_key = ChemAppletTutor.__name__
+    state_key = ChemLlmTutor.__name__
 
     data_prompt = (
         "domain:{domain_id} | applet:{applet_id} | "
@@ -384,34 +370,34 @@ def build_chem_applet_prompt_args(
     applet = applet or {}
 
     args = {
-        **ChemAppletTutor.default_state,
+        **ChemLlmTutor.default_args,
         "tutor_name": tutor_name,
         "level": level,
         "history": history,
         "student_progress": student_progress,
         "student_belief": student_belief,
-        "domain_id": domain.get("id") or domain.get("value") or ChemAppletTutor.default_state["domain_id"],
-        "domain_label": domain.get("label") or domain.get("name") or ChemAppletTutor.default_state["domain_label"],
-        "domain_description": domain.get("description") or ChemAppletTutor.default_state["domain_description"],
+        "domain_id": domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"],
+        "domain_label": domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"],
+        "domain_description": domain.get("description") or ChemLlmTutor.default_args["domain_description"],
         "learning_targets": _compact_json(
-            domain.get("targets") or domain.get("learning_targets") or ChemAppletTutor.default_state["learning_targets"]
+            domain.get("targets") or domain.get("learning_targets") or ChemLlmTutor.default_args["learning_targets"]
         ),
-        "applet_id": applet.get("id") or ChemAppletTutor.default_state["applet_id"],
-        "applet_name": applet.get("name") or ChemAppletTutor.default_state["applet_name"],
-        "applet_description": applet.get("description") or ChemAppletTutor.default_state["applet_description"],
+        "applet_id": applet.get("id") or ChemLlmTutor.default_args["applet_id"],
+        "applet_name": applet.get("name") or ChemLlmTutor.default_args["applet_name"],
+        "applet_description": applet.get("description") or ChemLlmTutor.default_args["applet_description"],
         "applet_remote_control": _compact_json(
-            applet.get("remote_control") or ChemAppletTutor.default_state["applet_remote_control"]
+            applet.get("remote_control") or ChemLlmTutor.default_args["applet_remote_control"]
         ),
         "applet_info_store_schema": _compact_json(
-            applet.get("info_store_schema") or ChemAppletTutor.default_state["applet_info_store_schema"]
+            applet.get("info_store_schema") or ChemLlmTutor.default_args["applet_info_store_schema"]
         ),
         "applet_state": _compact_json(
-            applet_state if applet_state is not None else ChemAppletTutor.default_state["applet_state"]
+            applet_state if applet_state is not None else ChemLlmTutor.default_args["applet_state"]
         ),
     }
     return args
 
 
 # late bind self-reference and other classes
-ChemAppletTutor.target = ChemAppletUserInput
-ChemAppletTutor.continuations = []
+ChemLlmTutor.target = ChemLlmUserInput
+ChemLlmTutor.continuations = []

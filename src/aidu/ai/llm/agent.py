@@ -215,6 +215,97 @@ class WorkflowAgent(Agent):
             rationale=rationale,
         )
 
+
+class BeginAgent(WorkflowAgent):
+    """Inspect and log the initial actor input before normal routing begins.
+
+    ``BeginAgent`` is useful as an actor startup agent. It does not interpret
+    the input. It shows the initial artifact, context, and available agents,
+    then forwards the same artifact to the configured target.
+
+    When ``interactive`` is enabled, it pauses on the server console after
+    printing the inspection panel. This is intentionally a server-side debugging
+    affordance: the actor request waits until the operator presses Enter.
+    """
+
+    target: type[Agent] | None = None
+    continuations: list[type[Agent]] = []
+
+    def __init__(
+        self,
+        target: type[Agent] | None = None,
+        interactive: bool = False,
+    ):
+        self.target_agent = target
+        self.interactive = interactive
+
+    def run(
+        self,
+        artifact: Artifact,
+        context: Context,
+        agents: list[Agent] | None = None,
+    ) -> tuple[AgentResult, Context]:
+        target = self.target_agent or self.__class__.target
+        if target is None:
+            raise ValueError("BeginAgent requires a target agent.")
+
+        available_agents = [
+            agent.__class__ if isinstance(agent, Agent) else agent
+            for agent in (agents or [])
+        ]
+        if available_agents and target not in available_agents:
+            raise ValueError(
+                f"BeginAgent target {target.__name__!r} is not registered in this actor."
+            )
+
+        self._show_actor_input(artifact, context, agents or [], target)
+        if self.interactive:
+            from rich import get_console
+
+            get_console().input("[bold green]BeginAgent> press Enter to continue[/bold green] ")
+
+        recommendation = self.register_recommendation(
+            "begin",
+            target=target,
+            continuations=[],
+            utility=1.0,
+            rationale="Initial actor input inspected; continue to actor router.",
+        )
+        return self.result(artifacts=[artifact], recommendations=[recommendation]), context
+
+    def _show_actor_input(
+        self,
+        artifact: Artifact,
+        context: Context,
+        agents: list[Agent],
+        target: type[Agent],
+    ) -> None:
+        from rich import get_console
+        from rich.panel import Panel
+        from rich.pretty import Pretty
+        from rich.table import Table
+
+        table = Table(show_header=False, box=None)
+        table.add_row("[bold cyan]Target[/bold cyan]", target.__name__)
+        table.add_row("[bold cyan]Artifact[/bold cyan]", artifact.__class__.__name__)
+        table.add_row("[bold cyan]Producer[/bold cyan]", artifact.producer)
+        table.add_row("[bold cyan]Content[/bold cyan]", Pretty(artifact.content))
+        table.add_row("[bold cyan]Step[/bold cyan]", str(context.step))
+        table.add_row("[bold yellow]Trace messages[/bold yellow]", str(len(context.trace.messages)))
+        table.add_row("[bold yellow]State keys[/bold yellow]", ", ".join(sorted(context.state.data.keys())))
+        table.add_row(
+            "[bold yellow]Agents[/bold yellow]",
+            ", ".join(agent.__class__.__name__ for agent in agents),
+        )
+
+        get_console().print(
+            Panel(
+                table,
+                title=f"[bold magenta]{self.id}[/bold magenta]",
+                expand=False,
+            )
+        )
+
 # --------------------------------------------------------------------------
 # Specialized agents for testing and demonstration purposes
 # --------------------------------------------------------------------------
