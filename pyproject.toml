@@ -24,6 +24,7 @@ dependencies = [
     "sympy>=1.11.0",
     "pluggy>=1.0",
     "prompt-toolkit>=3.0.0",
+    "jq>=1.8.0",
 ]
 
 [dependency-groups]

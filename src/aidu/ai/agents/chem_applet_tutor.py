@@ -29,71 +29,8 @@ def _compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def _parse_json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str):
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _selected_object_name(info_store: dict[str, Any]) -> str:
-    name = (
-        info_store.get("elementName")
-        or info_store.get("selectedName")
-        or info_store.get("name")
-        or info_store.get("moleculeName")
-        or info_store.get("elementSymbol")
-        or info_store.get("selected")
-    )
-    symbol = info_store.get("elementSymbol")
-    if name and symbol and name != symbol:
-        return f"{name} ({symbol})"
-    return str(name or "this")
-
-
-def _periodic_table_visual_feedback(selected: str, info_store: dict[str, Any]) -> str | None:
-    valence = info_store.get("valenceElectrons")
-    if isinstance(valence, int):
-        if valence == 1:
-            return f"I see you clicked {selected}; in the atom picture there is one electron on the outer ring. Why might that make this element reactive?"
-
-        needed = max(0, 8 - valence)
-        return f"I see you clicked {selected}; the atom picture shows {valence} electrons on the outer ring. How many more would fill that outer ring?"
-
-    atomic_number = info_store.get("atomicNumber")
-    if atomic_number is not None:
-        return f"I see you clicked {selected}; its tile position and atom picture belong to atomic number {atomic_number}. What does that number count inside the atom?"
-
-    return None
-
-
 def build_deterministic_applet_feedback(applet_state: Any) -> str | None:
-    state = _parse_json_object(applet_state)
-    info_store = state.get("infoStore")
-    if not isinstance(info_store, dict):
-        return None
-
-    selected = _selected_object_name(info_store)
-    applet = state.get("applet")
-    if applet == "applet-periodic-table":
-        feedback = _periodic_table_visual_feedback(selected, info_store)
-        if feedback:
-            return feedback
-
-    valence = info_store.get("valenceElectrons")
-    if isinstance(valence, int):
-        return f"I see you clicked {selected}. The picture shows {valence} electrons in the outer shell; what does that suggest about bonding?"
-
-    atomic_number = info_store.get("atomicNumber")
-    if atomic_number is not None:
-        return f"I see you clicked {selected}. What does atomic number {atomic_number} tell you about this atom?"
-
-    return f"I see you clicked {selected}. What pattern or property do you notice from that selection?"
+    return "I see you clicked this. What was your intent"
 
 
 class AppletRuleResponder(WorkflowAgent):
@@ -243,7 +180,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
             str(state.get("applet_state", ""))[:240],
             artifact.content[:240],
         )
-        result, context = self.ask(Message(role="user", content=artifact.content), context)
+        result, context = self.ask(Message(role="user", content=artifact.content), context, ask_params=state)
         logger.warning("ChemLlmTutor.response %s", result.content())
         return result, context
 

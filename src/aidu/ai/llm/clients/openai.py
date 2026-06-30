@@ -60,6 +60,24 @@ def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens:
     return ((prompt_tokens * rates["input"]) + (completion_tokens * rates["output"])) / 1_000_000
 
 
+def _chat_completion_message(message: dict) -> dict:
+    allowed_keys = {
+        "role",
+        "content",
+        "name",
+        "function_call",
+        "tool_calls",
+        "tool_call_id",
+    }
+    return clean_message(
+        {
+            key: value
+            for key, value in message.items()
+            if key in allowed_keys
+        }
+    )
+
+
 class OpenAIClient(Client):
     def __init__(self, model=None, config={}, api_key=None):
 
@@ -133,7 +151,10 @@ class OpenAIClient(Client):
 
         kwargs = {
             "model": self.model,
-            "messages": context.trace.messages + [message],
+            "messages": [
+                _chat_completion_message(msg)
+                for msg in [*context.trace.messages, message]
+            ],
         }
 
         tools = config.tools if config else None

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import inspect
+import re
 
 from abc import ABC, abstractmethod
 from uuid import uuid4
@@ -230,6 +231,7 @@ class BeginAgent(WorkflowAgent):
 
     target: type[Agent] | None = None
     continuations: list[type[Agent]] = []
+    _placeholder_pattern = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*(?:[!:.][^{}]*)?\}")
 
     def __init__(
         self,
@@ -260,9 +262,7 @@ class BeginAgent(WorkflowAgent):
 
         self._show_actor_input(artifact, context, agents or [], target)
         if self.interactive:
-            from rich import get_console
-
-            get_console().input("[bold green]BeginAgent> press Enter to continue[/bold green] ")
+            self._interactive_context_prompt(context)
 
         recommendation = self.register_recommendation(
             "begin",
@@ -291,7 +291,13 @@ class BeginAgent(WorkflowAgent):
         table.add_row("[bold cyan]Producer[/bold cyan]", artifact.producer)
         table.add_row("[bold cyan]Content[/bold cyan]", Pretty(artifact.content))
         table.add_row("[bold cyan]Step[/bold cyan]", str(context.step))
-        table.add_row("[bold yellow]Trace messages[/bold yellow]", str(len(context.trace.messages)))
+        table.add_row("[bold yellow]Trace messages[/bold yellow]", f"{len(context.trace.messages)} message(s)")
+        for index, role, content, has_placeholders in self._trace_message_rows(context.trace.messages):
+            placeholder_status = "yes" if has_placeholders else "no"
+            table.add_row(
+                f"  [{index}] {role}",
+                f"placeholders: {placeholder_status} | content: {content}",
+            )
         table.add_row("[bold yellow]State keys[/bold yellow]", ", ".join(sorted(context.state.data.keys())))
         table.add_row(
             "[bold yellow]Agents[/bold yellow]",
@@ -305,6 +311,133 @@ class BeginAgent(WorkflowAgent):
                 expand=False,
             )
         )
+
+    @classmethod
+    def _interactive_context_prompt(cls, context: Context) -> None:
+        from rich import get_console
+        from rich.pretty import Pretty
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import InMemoryHistory
+
+        console = get_console()
+        session = PromptSession(history=InMemoryHistory())
+        console.print("[bold green]BeginAgent jq>[/bold green] enter a jq query for context; blank, :q, quit, or exit continues")
+        while True:
+            try:
+                query = session.prompt("BeginAgent jq> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                return
+
+            if query in {"", ":q", "quit", "exit"}:
+                return
+
+            try:
+                result = cls._run_context_jq_query(context, query)
+            except RuntimeError as exc:
+                console.print(f"[bold red]{exc}[/bold red]")
+                continue
+            except Exception as exc:
+                console.print(f"[bold red]jq error:[/bold red] {exc}")
+                continue
+
+            console.print(Pretty(result))
+
+    @staticmethod
+    def _context_query_snapshot(context: Context) -> dict:
+        return context.model_dump(mode="json")
+
+    @classmethod
+    def _run_context_jq_query(cls, context: Context, query: str):
+        try:
+            import jq
+        except ImportError as exc:
+            raise RuntimeError("jq is not installed; install the aidu-ai-llm dependencies to use BeginAgent jq inspection.") from exc
+
+        return jq.compile(query).input(cls._context_query_snapshot(context)).all()
+
+    @classmethod
+    def _trace_message_rows(
+        cls,
+        messages: list[Message],
+        max_content_length: int = 100,
+    ) -> list[tuple[int, str, str, bool]]:
+        rows = []
+        for index, message in enumerate(messages):
+            if isinstance(message, dict):
+                role = str(message.get("role", "?"))
+                content = cls._message_preview_content(message)
+            else:
+                role = "?"
+                content = message
+
+            content_text = cls._content_to_text(content)
+            rows.append(
+                (
+                    index,
+                    role,
+                    cls._truncate_content(content_text, max_content_length),
+                    cls._content_has_placeholders(content_text),
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _message_preview_content(message: Message):
+        applet_input = message.get("applet_input")
+        if message.get("kind") == "applet" and isinstance(applet_input, dict):
+            return applet_input
+        return message.get("content", "")
+
+    @classmethod
+    def _content_to_text(cls, content) -> str:
+        if content is None:
+            return ""
+        return content if isinstance(content, str) else cls._compact_content_repr(content)
+
+    @classmethod
+    def _compact_content_repr(cls, content) -> str:
+        if isinstance(content, dict):
+            return "{" + ", ".join(
+                f"{key!r}: {cls._compact_nested_value(value)}"
+                for key, value in content.items()
+            ) + "}"
+        if isinstance(content, list):
+            return "[" + ", ".join(cls._compact_nested_value(value) for value in content) + "]"
+        if isinstance(content, tuple):
+            return "(" + ", ".join(cls._compact_nested_value(value) for value in content) + ")"
+        if isinstance(content, set):
+            return "{" + ", ".join(cls._compact_nested_value(value) for value in content) + "}"
+        return repr(content)
+
+    @staticmethod
+    def _compact_nested_value(value) -> str:
+        if isinstance(value, dict):
+            return "{...}"
+        if isinstance(value, list):
+            return "[...]"
+        if isinstance(value, tuple):
+            return "(...)"
+        if isinstance(value, set):
+            return "{...}"
+        return repr(value)
+
+    @staticmethod
+    def _truncate_content(content: str, max_length: int) -> str:
+        compact = " ".join(content.split())
+        if not compact:
+            return "<empty>"
+        if len(compact) <= max_length:
+            return compact
+        prefix = compact[: max_length - 3].rstrip()
+        word_prefix = prefix.rsplit(" ", 1)[0]
+        if word_prefix:
+            prefix = word_prefix
+        return prefix + "..."
+
+    @classmethod
+    def _content_has_placeholders(cls, content: str) -> bool:
+        return bool(cls._placeholder_pattern.search(content))
 
 # --------------------------------------------------------------------------
 # Specialized agents for testing and demonstration purposes

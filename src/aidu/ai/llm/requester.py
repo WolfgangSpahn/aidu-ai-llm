@@ -182,6 +182,45 @@ class LLMRequester:
         )
         return context
 
+    @staticmethod
+    def _is_current_message_duplicate(trace_message: Message, current_message: Message) -> bool:
+        if trace_message.get("role") != current_message.get("role"):
+            return False
+
+        trace_content = str(trace_message.get("content") or "").strip()
+        current_content = str(current_message.get("content") or "").strip()
+        if not trace_content or not current_content:
+            return False
+
+        return trace_content == current_content or trace_content.endswith(current_content)
+
+    def _context_for_llm_call(self, context: Context, message: Message, prompt_params=None) -> Context:
+        """Return a call-only context whose trace starts with a system prompt.
+
+        Runtime ``context.trace.messages`` is dialog history. Provider clients
+        still expect the system prompt in the messages list, so we prepend it on
+        a shallow copy used only for the actual LLM call.
+        """
+        messages = context.trace.messages
+        has_system = bool(messages and messages[0].get("role") == "system")
+        dialog_messages = list(messages[1:] if has_system else messages)
+        if dialog_messages and self._is_current_message_duplicate(dialog_messages[-1], message):
+            dialog_messages = dialog_messages[:-1]
+
+        if has_system and messages[0].get("content") and not prompt_params:
+            system_message = messages[0]
+        else:
+            system_messages = self.build_system_prompt(prompt_params)
+            if not system_messages:
+                raise ValueError("LLMRequester requires a system prompt for LLM calls.")
+            system_message = system_messages[0]
+
+        return context.model_copy(
+            update={
+                "trace": Trace(messages=[system_message, *dialog_messages]),
+            }
+        )
+
     def ask(self, message: Message, context: Context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
         """
         Execute a single LLM request.
@@ -217,20 +256,7 @@ class LLMRequester:
         Function calls are returned but not executed automatically.
         """
 
-        # ----------------------------------------
-        # sanity checks
-        # ----------------------------------------
-
-        if not context.trace.messages or context.trace.messages[0]["role"] != "system":
-            logger.error("Context trace must start with a system message. Please build and prepend the system prompt to the trace before calling ask().")
-            raise ValueError("Context trace must start with a system message.")
-
-        # ----------------------------------------
-        # update system prompt with params
-        # ----------------------------------------
-
-        if ask_params:
-            context = self.update_system_prompt(context, prompt_params=ask_params)
+        effective_context = self._context_for_llm_call(context, message=message, prompt_params=ask_params)
 
         # inject instance-level tools into the per-call config
         from dataclasses import replace as dataclass_replace
@@ -252,9 +278,9 @@ class LLMRequester:
         # ----------------------------------------
         _t0 = time.perf_counter()
 
-        logger.debug(f"client ask() called with message: {message} and system message:\n{context.get_system_message()['content']}")
+        logger.debug(f"client ask() called with message: {message} and system message:\n{effective_context.get_system_message()['content']}")
         logger.debug(f"- this functions available for call: {list(self.function_lookup.keys())}")
-        response = self.client.ask(message, context, config=ask_config)
+        response = self.client.ask(message, effective_context, config=ask_config)
 
         # ----------------------------------------
         # update context with usage data
