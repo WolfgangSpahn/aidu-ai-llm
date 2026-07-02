@@ -167,6 +167,8 @@ class WorkflowAgent(Agent):
     # own targets and continuations in the content of the fc_.... definitions
     target: type[Agent] | None = None
     continuations: list[type[Agent]] = []
+    # all discovered function-call routes for this agent class; used to validate that the target and continuations 
+    # are consistent with the agents list
     discovered_fn_routes = set()
 
     def __init_subclass__(cls):
@@ -199,6 +201,9 @@ class WorkflowAgent(Agent):
         utility=1.0,
         rationale=""
     ):
+        """
+        Register a recommendation for the current agent run.
+        """
 
         self.__class__.discovered_fn_routes.add(
             (

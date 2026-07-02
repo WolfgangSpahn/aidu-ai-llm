@@ -5,8 +5,7 @@
 
 """
 Small FastAPI server exposing a stateful chat interface.
-Mirrors run_smoke_test_chat: one system prompt, per-session message history,
-single POST endpoint for user turns.
+The demo owns HTTP/session concerns; assistants own prompts and turn handling.
 
 Run:
      uv run python -m serve.app
@@ -33,9 +32,9 @@ from rich.console import Console
 
 
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.assistants.mathTutor_ass import MathTutor
+from aidu.ai.llm.assistants.mathAssistent_ass import MathAssistent
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
-from aidu.ai.llm.client import Context, Trace, State
+from aidu.ai.core.context import Context
 
 load_dotenv()
 
@@ -70,8 +69,8 @@ logger.info("✓ Logging system initialized - AIDU LLM Chat API Starting")
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="Smoke Chat API",
-    description="Stateful chat backed by gpt-4o-mini, one session per conversation thread.",
+    title="AIDU LLM Demo API",
+    description="Stateful chat API backed by registered AIDU assistants.",
     version="0.1.0",
 )
 
@@ -91,22 +90,21 @@ logger.info("✓ CORS enabled for all origins")
 # ---------------------------------------------------------------------------
 
 MODEL = "gpt-4o-mini"
-SYSTEM_PROMPT = "You are a helpful assistant."
-DEFAULT_ACTOR = "MathTutor"
+DEFAULT_ASSISTANT = "MathAssistent"
 WEB_DIR = FsPath(__file__).parent / "web"
 ASSETS_DIR = WEB_DIR / "assets"
 
 logger.info("ASSETS_DIR=%s", ASSETS_DIR)
 logger.info("ASSETS exists=%s", ASSETS_DIR.exists())
 
-INDEX_FILE = "index.solidjs.html"
+INDEX_FILE = "index.html"
 logger.info("WEB_DIR = %s", WEB_DIR)
 logger.info("exists = %s", WEB_DIR.exists())
 
 
-# Registry for actor classes. Add new actors here as they are introduced.
-ACTOR_REGISTRY = {
-    "MathTutor": MathTutor,
+# Registry for assistant classes. Add new assistants here as they are introduced.
+ASSISTANT_REGISTRY = {
+    "MathAssistent": MathAssistent,
 }
 
 # ---------------------------------------------------------------------------
@@ -137,25 +135,49 @@ def _make_client() -> OpenAIClient:
         logger.error("✗ OPENAI_API_KEY not configured")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured.")
     logger.debug("OpenAI client created")
-    return OpenAIClient("gpt-4o-mini", config={"enforce_json": False}, api_key=api_key)
+    return OpenAIClient(MODEL, config={"enforce_json": False}, api_key=api_key)
 
 
-def _make_actor(actor_name: str = DEFAULT_ACTOR):
+def _make_assistant(assistant_id: str = DEFAULT_ASSISTANT):
     """
-    Create and return an actor instance with an LLMClient.
+    Create and return an assistant instance with an LLMClient.
     """
-    actor_cls = ACTOR_REGISTRY.get(actor_name)
-    if actor_cls is None:
-        available = ", ".join(sorted(ACTOR_REGISTRY.keys()))
+    assistant_cls = ASSISTANT_REGISTRY.get(assistant_id)
+    if assistant_cls is None:
+        available = ", ".join(sorted(ASSISTANT_REGISTRY.keys()))
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown actor '{actor_name}'. Available actors: {available}",
+            detail=f"Unknown assistant '{assistant_id}'. Available assistants: {available}",
         )
 
     client = _make_client()
-    actor = actor_cls(client)
-    logger.debug(f"{actor_name} actor instantiated")
-    return actor
+    assistant = assistant_cls(client)
+    logger.debug(f"{assistant_id} assistant instantiated")
+    return assistant
+
+
+def _prepare_context_for_assistant(context: Context, assistant) -> Context:
+    """
+    Bind an empty session to an assistant.
+
+    The selected assistant supplies the system prompt. Once a session has chat
+    history, it remains bound to that assistant so the system prompt and trace
+    stay coherent.
+    """
+    assistant_id = assistant.id
+    active_assistant_id = context.state.data.get("assistant_id")
+
+    if active_assistant_id and active_assistant_id != assistant_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session is already bound to assistant '{active_assistant_id}'. Start a new session to use '{assistant_id}'.",
+        )
+
+    if not context.trace.messages:
+        context.trace.messages = assistant.build_system_prompt()
+        context.state.data["assistant_id"] = assistant_id
+
+    return context
 
 
 # ---------------------------------------------------------------------------
@@ -207,32 +229,27 @@ class EvaluateResponse(BaseModel):
 def create_session() -> SessionResponse:
     """
     Open a fresh conversation thread.  Returns the ``session_id`` to use in
-    subsequent ``/sessions/{session_id}/chat`` calls.
+    subsequent ``/sessions/{session_id}/{assistant_id}/chat`` calls.
     """
     session_id = str(uuid.uuid4())
-    context = Context(
-        trace=Trace(messages=[{"role": "system", "content": SYSTEM_PROMPT}]),
-        state=State(data={}),
-    )
+    context = Context()
     _sessions[session_id] = context
     logger.info(f"✓ Session created: {session_id}")
     return SessionResponse(session_id=session_id)
 
 
 @app.post(
-    "/sessions/{session_id}/{actor_id}/chat",
+    "/sessions/{session_id}/{assistant_id}/chat",
     response_model=ChatResponse,
     summary="Send a message and get the assistant reply",
 )
 def chat(
     session_id: Annotated[str, Path(description="Session ID returned by POST /sessions")],
-    actor_id: Annotated[str, Path(description="Actor ID (e.g. MathTutor)")],
+    assistant_id: Annotated[str, Path(description="Assistant ID (e.g. MathAssistent)")],
     body: ChatRequest,
 ) -> ChatResponse:
     """
-    Append the user message to the session history, call the MathTutor actor,
-    append the assistant reply, and return it. Supports math problem solving
-    and student progress tracking through function calls.
+    Send a user message through the selected assistant and return its reply.
     """
     try:
         msg_preview = body.message[:60] + ("..." if len(body.message) > 60 else "")
@@ -242,10 +259,11 @@ def chat(
         user_message = {"role": "user", "content": body.message}
         logger.debug(f"  History: {len(context.trace.messages)} messages")
 
-        actor = _make_actor(actor_id)
-        logger.debug(f"Calling {actor_id}.chat_turn()...")
-        reply, context = actor.chat_turn(context=context, user_message=user_message)
-        logger.debug(f" {actor_id}.chat_turn() completed and updated context")
+        assistant = _make_assistant(assistant_id)
+        context = _prepare_context_for_assistant(context, assistant)
+        logger.debug(f"Calling {assistant_id}.chat_turn()...")
+        reply, context = assistant.chat_turn(context=context, user_message=user_message)
+        logger.debug(f" {assistant_id}.chat_turn() completed and updated context")
 
         # Persist updated context
         _sessions[session_id] = context

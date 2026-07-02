@@ -114,10 +114,17 @@ class ChemTutor(WorkflowAgent, LLMFcRequester):
             }
 
             artifact = AppletArtifact(producer=producer, step=context.step, content=result_content)
-            recommendation = self.register_recommendation("default", 
-                                                          target=EndAgent, continuations=[], 
-                                                          utility=1.0, 
-                                                          rationale="Change build an atom applet state requested")
+            # TODO: register_recommendation contract assumes only registration of fn call routes, but this is a direct artifact return.
+            #       We should consider a more general approach for registering recommendations for direct artifact returns.
+            #       Or renaming register_recommendation to register_function_call_recommendation to clarify its purpose.
+            # recommendation = self.register_recommendation("default", 
+            #                                               target=EndAgent, continuations=[], 
+            #                                               utility=1.0, 
+            #                                               rationale="Change build an atom applet state requested")
+            recommendation = Recommendation(target=EndAgent, 
+                                            continuations=[], 
+                                            utility=1.0, 
+                                            rationale="Change build an atom applet state requested")
             logger.debug(f"Routing to Applet with artifact: {artifact} and recommendation: {recommendation}")
 
             return self.result([artifact], [recommendation]), context

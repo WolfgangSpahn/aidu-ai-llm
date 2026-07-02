@@ -5,20 +5,9 @@
  * See ../LICENSE for the full text.
  *
  * Description:
- * SolidJS version of main.ts — same chat UI logic ported to reactive signals and JSX components.
+ * Chat UI for the AIDU LLM demo.
  * Stores chat history and session id in localStorage, renders messages with markdown and LaTeX,
  * creates backend session on first use, and sends prompts to the chat API.
- *
- * Required packages (add to package.json before use):
- *   npm install solid-js
- *   npm install -D vite-plugin-solid
- *
- * In vite.config.ts, add:
- *   import solidPlugin from 'vite-plugin-solid';
- *   plugins: [solidPlugin()],
- *
- * To activate: replace main.ts with this file as the entry point in index.html:
- *   <script type="module" src="/src/main_solidjs.tsx"></script>
  */
 
 import { createSignal, createEffect, For, Show } from 'solid-js';
@@ -30,9 +19,9 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
 const APP_VERSION = '0.2.5';
-console.log(`🚀 AIDU AI LLM Web (SolidJS) v${APP_VERSION} loaded`);
+console.log(`AIDU AI LLM Web v${APP_VERSION} loaded`);
 
-const ACTOR_ID = "MathTutor";
+const ASSISTANT_ID = "MathAssistent";
 
 // A chat message as displayed in the UI.
 type Message = {
@@ -303,7 +292,7 @@ function App() {
       }
 
       // Send user prompt to actor-specific chat endpoint.
-      const res = await fetch(`/sessions/${encodeURIComponent(sid)}/${ACTOR_ID}/chat`, {
+      const res = await fetch(`/sessions/${encodeURIComponent(sid)}/${ASSISTANT_ID}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: content, duration: userDuration }),
@@ -402,7 +391,7 @@ function App() {
     <>
       {/* Title with version badge */}
       <h1>
-        AIDU (SolidJS)
+        AIDU Math Assistant
         <span style={{ "font-size": "0.5em", color: "#888", "margin-left": "8px" }}>
           frontend: v{APP_VERSION}
         </span>

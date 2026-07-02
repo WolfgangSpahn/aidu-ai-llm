@@ -95,7 +95,7 @@ class LLMFcRequester(LLMRequester):
     Example
     -------
 
-    class MathTutor(WorkflowAgent, LLMFcRequester):
+    class MathAssistent(WorkflowAgent, LLMFcRequester):
 
         def fc_solve(
             self,

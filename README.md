@@ -87,8 +87,7 @@ test/
 
 web/
   index.html             Chat page shell
-  src/main.ts            Browser chat logic
-  HELP.md                License/help notes
+  src/main.tsx           Browser chat logic
 ```
 
 ## Useful Commands
@@ -109,4 +108,3 @@ cd web && make build    # build frontend
 
 - Requires `OPENAI_API_KEY` in your environment (or `.env`).
 - The frontend talks to the backend session endpoints under `/sessions/...`.
-

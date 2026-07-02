@@ -1,10 +1,20 @@
 import { defineConfig } from 'vite';
+import solidPlugin from 'vite-plugin-solid';
 
-// Default config for the raw TypeScript variant (src/main.ts + index.html)
+// Config for the frontend.
 export default defineConfig({
-	server: {
-		proxy: {
-			'/sessions': 'http://localhost:8000',
-		},
-	},
+  plugins: [solidPlugin()],
+  server: {
+    proxy: {
+      '/sessions': 'http://localhost:8000',
+    },
+  },
+  build: {
+    rollupOptions: {
+      // Keep the packaged HTML name aligned with demo/app.py.
+      input: {
+        index: 'index.html',
+      },
+    },
+  },
 });

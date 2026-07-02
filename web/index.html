@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>Chat</title>
+  <title>AIDU Math Assistant</title>
   <style>
     body {
       font-family: system-ui, sans-serif;
@@ -151,12 +151,10 @@
       overflow-x: auto;
     }
 
-    /* KaTeX default styles */
     .katex {
       font-size: 1.05em;
     }
 
-    /* KaTeX math display */
     .mathblock {
       display: block;
       overflow-x: auto;
@@ -168,7 +166,6 @@
       display: inline;
     }
 
-    /* Markdown code blocks */
     code {
       background: #f0f0f0;
       padding: 2px 6px;
@@ -189,7 +186,6 @@
       padding: 0;
     }
 
-    /* Markdown lists */
     ul, ol {
       margin: 10px 0;
       padding-left: 20px;
@@ -199,7 +195,6 @@
       margin: 5px 0;
     }
 
-    /* Bold, italic */
     strong {
       font-weight: bold;
     }
@@ -210,18 +205,10 @@
   </style>
 </head>
 <body>
-  <div id="messages"></div>
+  <div id="app"></div>
 
-  <div class="controls">
-    <form id="form" style="flex: 1; display: flex; gap: 8px;">
-      <input id="input" placeholder="Type a message..." autocomplete="off" />
-      <button type="submit">Send</button>
-    </form>
-    <button id="clearBtn" type="button">Clear Chat</button>
-  </div>
+  <div id="version" style="position: fixed; bottom: 10px; right: 10px; font-size: 0.8em; color: #666; background: #f0f0f0; padding: 4px 8px; border-radius: 4px; z-index: 9999;">v0.2.5</div>
 
-  <div id="version" style="position: fixed; bottom: 10px; right: 10px; font-size: 0.8em; color: #666; background: #f0f0f0; padding: 4px 8px; border-radius: 4px; z-index: 9999;">v0.2.4</div>
-
-  <script type="module" src="/src/main.ts"></script>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

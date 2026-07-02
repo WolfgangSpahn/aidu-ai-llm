@@ -7,15 +7,9 @@ install: ## Install frontend dependencies (Vite)
 	@echo "Installing frontend dependencies"
 	npm install
 
-build: build.solidjs ## Build frontend for production (alias for build.solidjs)
-
-build.raw: ## Build raw TypeScript variant (main.ts + index.html)
-	@echo "Building raw TypeScript variant"
+build: ## Build frontend for production
+	@echo "Building frontend"
 	npm run build -- --config vite.config.ts
-
-build.solidjs: ## Build SolidJS variant (main_solidjs.tsx + index.solidjs.html)
-	@echo "Building SolidJS variant"
-	npm run build -- --config vite.config.solidjs.ts
 
 clean: ## Clean node_modules and lock files
 	@echo "Cleaning dependencies"

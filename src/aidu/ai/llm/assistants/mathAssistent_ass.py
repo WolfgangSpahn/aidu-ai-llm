@@ -4,7 +4,7 @@
 # See LICENSE for the full text.
 
 """
-Math tutor agent with automatic function calling for solving math problems and tracking student progress.
+Math assistant with automatic function calling for solving math problems and tracking student progress.
 """
 
 import logging
@@ -26,21 +26,21 @@ class StudentInfo(BaseModel):
     age: int = Field(..., description="Student's age")
 
 
-class MathTutor(LLMAssistant):
-    """A math tutor assistant with function calls for solving problems and tracking student progress."""
+class MathAssistent(LLMAssistant):
+    """A math assistant with function calls for solving problems and tracking student progress."""
 
     # System prompt with flexible placeholders that can be filled via prompt_args
     # Unfilled placeholders will remain as {placeholder} for later customization
     #
     # Usage examples:
     #   # Use with defaults (unfilled placeholders remain as {placeholder})
-    #   tutor = MathTutor(client)
+    #   assistant = MathAssistent(client)
     #
     #   # Customize specific fields
-    #   tutor = MathTutor(client, prompt_args={"student_name": " for Alice", "level": " in algebra"})
+    #   assistant = MathAssistent(client, prompt_args={"student_name": " for Alice", "level": " in algebra"})
     #
     #   # Override at prompt building time
-    #   messages = tutor.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
+    #   messages = assistant.build_system_prompt(prompt_params={"focus_areas": " - focus on calculus"})
     prompt_template = textwrap.dedent("""\
         You are a helpful and patient math tutor{student_name}.
         Your goal is to help students{level} understand mathematical concepts and solve problems step by step.
@@ -125,7 +125,7 @@ class MathTutor(LLMAssistant):
 
 
 def run_smoke_test(console):
-    """Smoke test for MathTutor demonstrating schema generation and interactive chat."""
+    """Smoke test for MathAssistent demonstrating schema generation and interactive chat."""
     import os
     from dotenv import load_dotenv
     from rich.rule import Rule
@@ -138,12 +138,12 @@ def run_smoke_test(console):
     assert api_key, "Missing OPENAI_API_KEY in .env"
 
     client = OpenAIClient("gpt-4o-mini", config={}, api_key=api_key)
-    tutor = MathTutor(client)
+    assistant = MathAssistent(client)
 
     # Schema generation
-    console.print(Rule("MathTutor Schema Generation Test"))
-    schemas = MathTutor.schema()
-    fnames = MathTutor.fnames()
+    console.print(Rule("MathAssistent Schema Generation Test"))
+    schemas = MathAssistent.schema()
+    fnames = MathAssistent.fnames()
     console.print(f"\nDiscovered functions: {fnames}")
     console.print(f"Generated schemas: {len(schemas)} function(s)")
     assert len(schemas) == 2, f"Expected 2 schemas, got {len(schemas)}"
@@ -177,8 +177,8 @@ def run_smoke_test(console):
     def on_end():
         console.print("\n[green]✓ Session Complete[/]")
 
-    tutor.interactive_chat(
-        context=Context(trace=Trace(messages=tutor.build_system_prompt())),
+    assistant.interactive_chat(
+        context=Context(trace=Trace(messages=assistant.build_system_prompt())),
         on_display_header=header,
         on_get_user_input=get_input,
         on_display_response=display_response,
@@ -186,10 +186,10 @@ def run_smoke_test(console):
         console=console,
     )
 
-    print("\n✅ MathTutor smoke test passed!")
+    print("\n✅ MathAssistent smoke test passed!")
 
     def run_smoke_test_new(console):
-        """Smoke test for MathTutor demonstrating schema generation, AgentResult generation and interactive chat."""
+        """Smoke test for MathAssistent demonstrating schema generation, AgentResult generation and interactive chat."""
 
         import os
         import textwrap
@@ -219,16 +219,16 @@ def run_smoke_test(console):
             api_key=api_key,
         )
 
-        tutor = MathTutor(client)
+        assistant = MathAssistent(client)
 
         # --------------------------------------------------------------
         # Schema generation
         # --------------------------------------------------------------
 
-        console.print(Rule("MathTutor Schema Generation Test"))
+        console.print(Rule("MathAssistent Schema Generation Test"))
 
-        schemas = MathTutor.schema()
-        fnames = MathTutor.fnames()
+        schemas = MathAssistent.schema()
+        fnames = MathAssistent.fnames()
 
         console.print(f"\nDiscovered functions: {fnames}")
         console.print(f"Generated schemas: {len(schemas)} function(s)")
@@ -243,11 +243,11 @@ def run_smoke_test(console):
         # AgentResult generation
         # --------------------------------------------------------------
 
-        console.print(Rule("MathTutor AgentResult Test"))
+        console.print(Rule("MathAssistent AgentResult Test"))
 
         context = Context()
 
-        result = tutor.fc_solve_math_problem(
+        result = assistant.fc_solve_math_problem(
             context=context,
             problem="diff(7*x**2 + 3*x - 5, x)",
         )
@@ -269,7 +269,7 @@ def run_smoke_test(console):
 
         console.print(f"[green]✓ Produced {len(result.recommendations)} recommendation(s)[/green]")
 
-        completion_result = tutor.fc_student_completed(
+        completion_result = assistant.fc_student_completed(
             context=context,
             student=StudentInfo(
                 name="Alice",
@@ -332,8 +332,8 @@ def run_smoke_test(console):
 
             console.print("\n[green]✓ Session Complete[/green]")
 
-        context = tutor.interactive_chat(
-            context=Context(trace=Trace(messages=tutor.build_system_prompt())),
+        context = assistant.interactive_chat(
+            context=Context(trace=Trace(messages=assistant.build_system_prompt())),
             on_display_header=header,
             on_get_user_input=get_input,
             on_display_response=display_response,
@@ -351,7 +351,7 @@ def run_smoke_test(console):
         # )
 
         # console.print(
-        #     "\n[bold green]✓ MathTutor smoke test passed[/bold green]"
+        #     "\n[bold green]✓ MathAssistent smoke test passed[/bold green]"
         # )
 
 
