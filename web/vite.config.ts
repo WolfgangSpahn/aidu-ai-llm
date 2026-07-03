@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/sessions': 'http://localhost:8000',
+      '/runnables': 'http://localhost:8000',
     },
   },
   build: {

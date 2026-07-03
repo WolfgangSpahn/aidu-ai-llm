@@ -36,12 +36,15 @@ def build_deterministic_applet_feedback(applet_content: dict[str, Any]) -> str |
     Returns:
         A string containing the feedback, or None if no feedback is applicable.
     """
-    action = applet_content.get("action", "no action specified by applet infoStore")
-    followup = applet_content.get("followup", "What do you notice about it?")
+    info_store = applet_content["infoStore"]
+    action = info_store["action"]
+    followup = info_store["followup"]
 
     # generate feedback based on the action type, like this
     # I see you build a CO2 molecule. What do you notice about its structure?
-    return f"I see {action}. {followup}"
+    action_text = str(action).rstrip()
+    separator = " " if action_text.endswith((".", "?", "!")) else ". "
+    return f"I see you {action_text}{separator}{followup}"
 
 
 class AppletRuleResponder(WorkflowAgent):
@@ -69,8 +72,6 @@ class AppletRuleResponder(WorkflowAgent):
             logger.warning("AppletRuleResponder.run agents=None")
 
         feedback = build_deterministic_applet_feedback(artifact.content)
-        if not feedback:
-            feedback = "I see you changed the applet. What do you notice in the new picture?"
 
         response = TextArtifact(
             producer=self.id,

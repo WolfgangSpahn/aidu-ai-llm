@@ -21,7 +21,15 @@ import 'katex/dist/katex.min.css';
 const APP_VERSION = '0.2.5';
 console.log(`AIDU AI LLM Web v${APP_VERSION} loaded`);
 
-const ASSISTANT_ID = "MathAssistent";
+const DEFAULT_RUNNABLE: RunnableSelection = { kind: "assistant", id: "MathAssistent" };
+const DEFAULT_APPLET_PAYLOAD = JSON.stringify({
+  infoStore: {
+    action: "have built a CH_4 molecule.",
+    followup: "Why does carbon form four single bonds with hydrogen atoms in methane?",
+    sumFormula: "CH_4",
+    structuralFormula: "\\chemfig{H-C(-[2]H)(-[6]H)-H}",
+  },
+}, null, 2);
 
 // A chat message as displayed in the UI.
 type Message = {
@@ -55,6 +63,48 @@ type ChatResponse = {
     };
   };
 };
+
+type RunnableKind = "assistant" | "agent";
+
+type RunnableSelection = {
+  kind: RunnableKind;
+  id: string;
+};
+
+type RunnableDescriptor = RunnableSelection & {
+  label: string;
+  input_types: Array<"text" | "applet">;
+};
+
+function runnableKey(runnable: RunnableSelection): string {
+  return `${runnable.kind}:${runnable.id}`;
+}
+
+function parseRunnableKey(value: string | null): RunnableSelection {
+  if (!value) return DEFAULT_RUNNABLE;
+  const [kind, id] = value.split(":", 2);
+  if ((kind === "assistant" || kind === "agent") && id) {
+    return { kind, id };
+  }
+  return DEFAULT_RUNNABLE;
+}
+
+function isRunnableDescriptor(value: unknown): value is RunnableDescriptor {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.kind === "assistant" || candidate.kind === "agent") &&
+    typeof candidate.id === "string" &&
+    typeof candidate.label === "string" &&
+    Array.isArray(candidate.input_types) &&
+    candidate.input_types.every((item) => item === "text" || item === "applet")
+  );
+}
+
+function normalizeRunnables(value: unknown): RunnableDescriptor[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRunnableDescriptor);
+}
 
 function isChatResponse(value: unknown): value is ChatResponse {
   if (!value || typeof value !== 'object') return false;
@@ -231,16 +281,24 @@ function App() {
   // Reactive state: each getter/setter pair controls one UI concern.
   const [messages, setMessages]     = createSignal<Message[]>( JSON.parse(localStorage.getItem("chat") || "[]") );
   const [sessionId, setSessionId]   = createSignal<string>( localStorage.getItem("chat_session_id") || "" );
+  const [runnables, setRunnables]   = createSignal<RunnableDescriptor[]>([]);
+  const [selectedRunnable, setSelectedRunnable] = createSignal<RunnableSelection>(
+    DEFAULT_RUNNABLE
+  );
   const [loading, setLoading]       = createSignal(false);
   const [error, setError]           = createSignal<string | null>(null);
   const [inputValue, setInputValue] = createSignal("");
   const [inputStartedAt, setInputStartedAt] = createSignal<number | null>(null);
+  const [appletModalOpen, setAppletModalOpen] = createSignal(false);
+  const [appletPayload, setAppletPayload] = createSignal(DEFAULT_APPLET_PAYLOAD);
 
 
   // Persist message history whenever it changes.
   createEffect(() => { localStorage.setItem("chat", JSON.stringify(messages())); });
   // Persist session ID whenever it changes.
   createEffect(() => { localStorage.setItem("chat_session_id", sessionId()); });
+  // Persist selected runnable whenever it changes.
+  createEffect(() => { localStorage.setItem("chat_runnable", runnableKey(selectedRunnable())); });
 
   // Auto-scroll after new messages or loading state changes.
   createEffect(() => {
@@ -249,7 +307,28 @@ function App() {
     queueMicrotask(() => window.scrollTo(0, document.body.scrollHeight));
   });
 
-  async function sendMessage(content: string, userDuration: number) {
+  createEffect(() => {
+    fetch("/runnables")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load runnables (${res.status})`);
+        return res.json();
+      })
+      .then((body) => {
+        const nextRunnables = normalizeRunnables(body);
+        setRunnables(nextRunnables);
+
+        const selectedKey = runnableKey(selectedRunnable());
+        if (nextRunnables.length > 0 && !nextRunnables.some((item) => runnableKey(item) === selectedKey)) {
+          setSelectedRunnable(nextRunnables[0]);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setError(err instanceof Error ? err.message : "Failed to load runnables");
+      });
+  });
+
+  async function sendMessage(content: string, userDuration: number, inputType: "text" | "applet" = "text", appletPayload?: Record<string, unknown>) {
     // clear previous error when user retries
     setError(null);
     // Optimistic UI update: show user message immediately.
@@ -291,11 +370,17 @@ function App() {
         setSessionId(sid);
       }
 
-      // Send user prompt to actor-specific chat endpoint.
-      const res = await fetch(`/sessions/${encodeURIComponent(sid)}/${ASSISTANT_ID}/chat`, {
+      // Send user prompt to the selected runnable.
+      const res = await fetch(`/sessions/${encodeURIComponent(sid)}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: content, duration: userDuration }),
+        body: JSON.stringify({
+          message: content,
+          input_type: inputType,
+          applet: appletPayload,
+          duration: userDuration,
+          runnable: selectedRunnable(),
+        }),
       });
 
       if (!res.ok) {
@@ -366,6 +451,7 @@ function App() {
   // Form handler for Enter/Send.
   function handleSubmit(e: Event) {
     e.preventDefault();
+    if (!selectedSupports("text")) return;
     const value = inputValue().trim();
     if (!value) return;
     const now = performance.now();
@@ -376,26 +462,101 @@ function App() {
     sendMessage(value, userDuration);
   }
 
+  function handleAppletSubmit(e: Event) {
+    e.preventDefault();
+    const value = appletPayload().trim();
+    if (!value) return;
+
+    let parsed: Record<string, unknown>;
+    try {
+      const nextValue = JSON.parse(value);
+      if (!nextValue || typeof nextValue !== "object" || Array.isArray(nextValue)) {
+        throw new Error("Applet payload must be a JSON object.");
+      }
+      parsed = nextValue as Record<string, unknown>;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Applet payload must be valid JSON.");
+      return;
+    }
+
+    setAppletModalOpen(false);
+    sendMessage(JSON.stringify(parsed, null, 2), 0, "applet", parsed);
+  }
+
   // Clears local chat history and session id after confirmation.
   function handleClear() {
     if (confirm("Clear all messages and start a new session?")) {
-      localStorage.removeItem("chat_session_id");
-      localStorage.removeItem("chat");
-      setSessionId("");
-      setMessages([]);
-      setInputStartedAt(null);
+      resetSession();
     }
+  }
+
+  function resetSession() {
+    localStorage.removeItem("chat_session_id");
+    localStorage.removeItem("chat");
+    setSessionId("");
+    setMessages([]);
+    setInputStartedAt(null);
+  }
+
+  function handleRunnableChange(e: Event) {
+    const value = (e.currentTarget as HTMLSelectElement).value;
+    const nextRunnable = parseRunnableKey(value);
+    const previousKey = runnableKey(selectedRunnable());
+    const nextKey = runnableKey(nextRunnable);
+    setSelectedRunnable(nextRunnable);
+
+    if (previousKey !== nextKey && messages().length > 0) {
+      resetSession();
+    } else if (previousKey !== nextKey) {
+      setSessionId("");
+      localStorage.removeItem("chat_session_id");
+    }
+  }
+
+  function selectedRunnableLabel(): string {
+    const selectedKey = runnableKey(selectedRunnable());
+    return selectedRunnableDescriptor()?.label ?? selectedRunnable().id;
+  }
+
+  function selectedRunnableDescriptor(): RunnableDescriptor | undefined {
+    const selectedKey = runnableKey(selectedRunnable());
+    return runnables().find((item) => runnableKey(item) === selectedKey);
+  }
+
+  function selectedSupports(inputType: "text" | "applet"): boolean {
+    const descriptor = selectedRunnableDescriptor();
+    if (!descriptor) return inputType === "text";
+    return descriptor.input_types.includes(inputType);
   }
 
   return (
     <>
       {/* Title with version badge */}
       <h1>
-        AIDU Math Assistant
+        AIDU {selectedRunnableLabel()}
         <span style={{ "font-size": "0.5em", color: "#888", "margin-left": "8px" }}>
           frontend: v{APP_VERSION}
         </span>
       </h1>
+
+      <div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "12px" }}>
+        <label for="runnable" style={{ color: "#555", "font-size": "0.9rem" }}>Runnable</label>
+        <select
+          id="runnable"
+          value={runnableKey(selectedRunnable())}
+          disabled={loading()}
+          onChange={handleRunnableChange}
+          style={{ flex: 1, padding: "8px", "border-radius": "8px", border: "1px solid #ccc", background: "white" }}
+        >
+          <For each={runnables().length > 0 ? runnables() : [{ ...DEFAULT_RUNNABLE, label: "Math Assistant", input_types: ["text" as const] }]}>
+            {(runnable) => (
+              <option value={runnableKey(runnable)}>
+                {runnable.kind}: {runnable.label}
+              </option>
+            )}
+          </For>
+        </select>
+      </div>
 
       <Show when={error()}>
         <div style={{ padding: '8px', background: '#ffe6e6', color: '#800', 'border-radius': '6px', margin: '8px 0' }}>
@@ -412,7 +573,7 @@ function App() {
           {(msg, index) => (
             <div style={{ display: "flex", "flex-direction": "column", "align-items": msg.role === "user" ? "flex-end" : "flex-start" }}>
               <Show when={getMessageDurationLabel(messages(), index()) !== null}>
-                <div style={{ "font-size": "0.75rem", color: "#888", "margin-bottom": "4px" }}>
+                <div style={{ "font-size": "0.75rem", color: "#888", "margin-bottom": "2px" }}>
                   {getMessageMetaLabel(messages(), index())}
                 </div>
               </Show>
@@ -430,27 +591,52 @@ function App() {
       </div>
 
       {/* Input area */}
-      <form onSubmit={handleSubmit}>
-        <input
-          id="input"
-          type="text"
-          placeholder="Type a message…"
-          autocomplete="off"
-          value={inputValue()}
-          onInput={(e) => {
-            const nextValue = e.currentTarget.value;
-            if (nextValue.length > 0 && inputStartedAt() === null) {
-              setInputStartedAt(performance.now());
-            }
-            if (nextValue.length === 0) {
-              setInputStartedAt(null);
-            }
-            setInputValue(nextValue);
-          }}
-        />
-        <button type="submit">Send</button>
+      <form onSubmit={handleSubmit} style={{ margin: "10px 0 18px" }}>
+        <Show when={selectedSupports("text")}>
+          <input
+            id="input"
+            type="text"
+            placeholder="Type a message…"
+            autocomplete="off"
+            value={inputValue()}
+            onInput={(e) => {
+              const nextValue = e.currentTarget.value;
+              if (nextValue.length > 0 && inputStartedAt() === null) {
+                setInputStartedAt(performance.now());
+              }
+              if (nextValue.length === 0) {
+                setInputStartedAt(null);
+              }
+              setInputValue(nextValue);
+            }}
+          />
+          <button type="submit">Send</button>
+        </Show>
+        <Show when={selectedSupports("applet")}>
+          <button type="button" class="secondaryBtn" onClick={() => setAppletModalOpen(true)}>Applet</button>
+        </Show>
         <button type="button" id="clearBtn" onClick={handleClear}>Clear</button>
       </form>
+
+      <Show when={appletModalOpen()}>
+        <div class="modalBackdrop" onClick={() => setAppletModalOpen(false)}>
+          <form class="modal" onSubmit={handleAppletSubmit} onClick={(e) => e.stopPropagation()}>
+            <div class="modalHeader">
+              <h2>Applet data</h2>
+              <button type="button" class="secondaryBtn" onClick={() => setAppletModalOpen(false)}>Close</button>
+            </div>
+            <textarea
+              value={appletPayload()}
+              onInput={(e) => setAppletPayload(e.currentTarget.value)}
+              spellcheck={false}
+            />
+            <div class="modalActions">
+              <button type="button" class="secondaryBtn" onClick={() => setAppletPayload(DEFAULT_APPLET_PAYLOAD)}>Reset</button>
+              <button type="submit" disabled={loading()}>Send</button>
+            </div>
+          </form>
+        </div>
+      </Show>
     </>
   );
 }

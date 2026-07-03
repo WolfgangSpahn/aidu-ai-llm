@@ -11,15 +11,15 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from aidu.ai.core.agent_result import AgentResult
-from aidu.ai.core.recommendation import Recommendation
-from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact, Artifact
+from aidu.ai.core.artifacts import SymbolicArtifact, TextArtifact
 from aidu.support.regex.validate import assert_valid_sympy_problem
 
 
 from aidu.support.filesystem.search import find_up
-from aidu.ai.core.context import Context, Message, Trace
+from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.clients.openai import OpenAIClient
-from aidu.ai.llm.agent import Agent, WorkflowAgent, UserInput, EndAgent
+from aidu.ai.llm.agent import WorkflowAgent, UserInput, EndAgent
+from aidu.ai.llm.agent_runner import run_agent_text_turn
 from aidu.ai.llm.fc_requester import LLMFcRequester
 
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
@@ -197,25 +197,26 @@ def smoke_test(console):
     class UserInputMath(UserInput):
         target = MathTutor
 
-    agents = [MathTutor(client=client), UserInputMath(), SymbolicSolver()]
-    agents_dict = {agent.__class__: agent for agent in agents}
-
-    starting_agent = agents_dict[MathTutor]
+    starting_agent = MathTutor(client=client)
+    agents = [starting_agent, UserInputMath(), SymbolicSolver(), EndAgent()]
 
     # test symbolic solver function call with a sample problem
     problem = "Give me x for this equations: x**2 - 4 using sympy function call"
     problem = "hi"
     prompt_params = {
         "tutor_name": "",
-        "focus_areas": "general math",
+        "focus_area": "general math",
         "level": "beginner",
-        "dialogue_history": "",
+        "history": "",
         "student_progress": "",
         "student_beliefs": "",
     }
 
-    result, context = starting_agent.run(
-        TextArtifact(producer="user", step=0, content=problem), Context(trace=Trace(messages=starting_agent.build_system_prompt(prompt_params))), agents=agents
+    result, context = run_agent_text_turn(
+        starting_agent=starting_agent,
+        user_text=problem,
+        agents=agents,
+        prompt_params=prompt_params,
     )
 
     return result, context
