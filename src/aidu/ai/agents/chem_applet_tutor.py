@@ -302,56 +302,54 @@ class ChemLlmUserInput(UserInput):
     )
 
 
-# def build_chem_applet_prompt_args(
-#     *,
-#     tutor_name: str = "Marie",
-#     level: str = "beginner",
-#     history: str = " - Student just entered the GUI tutoring session.",
-#     student_progress: str = " - We have not started yet.",
-#     student_belief: str = " - No belief update yet.",
-#     domain: dict[str, Any] | None = None,
-#     applet: dict[str, Any] | None = None,
-#     applet_state: dict[str, Any] | str | None = None,
-# ) -> dict[str, Any]:
-#     """
-#     Build prompt args for the generic applet tutor.
+def build_chem_applet_prompt_args(
+    *,
+    tutor_name: str = "Marie",
+    level: str = "beginner",
+    history: str = " - Student just entered the GUI tutoring session.",
+    student_progress: str = " - We have not started yet.",
+    student_belief: str = " - No belief update yet.",
+    domain: dict[str, Any] | None = None,
+    applet: dict[str, Any] | None = None,
+    applet_state: dict[str, Any] | str | None = None,
+) -> dict[str, Any]:
+    """
+    Build prompt args for the generic applet tutor.
 
-#     Placeholder contract for future director wiring:
-#     - ``domain`` should come from the selected curriculum domain.
-#     - ``applet`` should come from the applet registry entry selected by that domain.
-#     - ``applet_state`` should be the latest applet infoStore forwarded by the frontend.
-#     """
+    ``domain`` should come from the selected curriculum domain, ``applet`` from
+    the applet registry entry selected by that domain, and ``applet_state`` from
+    the latest applet infoStore forwarded by the frontend.
+    """
 
-#     domain = domain or {}
-#     applet = applet or {}
+    domain = domain or {}
+    applet = applet or {}
 
-#     args = {
-#         **ChemLlmTutor.default_args,
-#         "tutor_name": tutor_name,
-#         "level": level,
-#         "history": history,
-#         "student_progress": student_progress,
-#         "student_belief": student_belief,
-#         "domain_id": domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"],
-#         "domain_label": domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"],
-#         "domain_description": domain.get("description") or ChemLlmTutor.default_args["domain_description"],
-#         "learning_targets": _compact_json(
-#             domain.get("targets") or domain.get("learning_targets") or ChemLlmTutor.default_args["learning_targets"]
-#         ),
-#         "applet_id": applet.get("id") or ChemLlmTutor.default_args["applet_id"],
-#         "applet_name": applet.get("name") or ChemLlmTutor.default_args["applet_name"],
-#         "applet_description": applet.get("description") or ChemLlmTutor.default_args["applet_description"],
-#         "applet_remote_control": _compact_json(
-#             applet.get("remote_control") or ChemLlmTutor.default_args["applet_remote_control"]
-#         ),
-#         "applet_info_store_schema": _compact_json(
-#             applet.get("info_store_schema") or ChemLlmTutor.default_args["applet_info_store_schema"]
-#         ),
-#         "applet_state": _compact_json(
-#             applet_state if applet_state is not None else ChemLlmTutor.default_args["applet_state"]
-#         ),
-#     }
-#     return args
+    return {
+        **ChemLlmTutor.default_args,
+        "tutor_name": tutor_name,
+        "level": level,
+        "history": history,
+        "student_progress": student_progress,
+        "student_belief": student_belief,
+        "domain_id": domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"],
+        "domain_label": domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"],
+        "domain_description": domain.get("description") or ChemLlmTutor.default_args["domain_description"],
+        "learning_targets": _compact_json(
+            domain.get("targets") or domain.get("learning_targets") or ChemLlmTutor.default_args["learning_targets"]
+        ),
+        "applet_id": applet.get("id") or ChemLlmTutor.default_args["applet_id"],
+        "applet_name": applet.get("name") or ChemLlmTutor.default_args["applet_name"],
+        "applet_description": applet.get("description") or ChemLlmTutor.default_args["applet_description"],
+        "applet_remote_control": _compact_json(
+            applet.get("remote_control") or ChemLlmTutor.default_args["applet_remote_control"]
+        ),
+        "applet_info_store_schema": _compact_json(
+            applet.get("info_store_schema") or ChemLlmTutor.default_args["applet_info_store_schema"]
+        ),
+        "applet_state": _compact_json(
+            applet_state if applet_state is not None else ChemLlmTutor.default_args["applet_state"]
+        ),
+    }
 
 
 # late bind self-reference and other classes
