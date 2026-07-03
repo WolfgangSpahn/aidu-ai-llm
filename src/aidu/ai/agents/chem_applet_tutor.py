@@ -37,14 +37,16 @@ def build_deterministic_applet_feedback(applet_content: dict[str, Any]) -> str |
         A string containing the feedback, or None if no feedback is applicable.
     """
     info_store = applet_content["infoStore"]
-    action = info_store["action"]
-    followup = info_store["followup"]
+    action = info_store.get("action")
+    followup = info_store.get("followup")
+    if not action or not followup:
+        return "You have clicked this. What was your intent"
 
     # generate feedback based on the action type, like this
-    # I see you build a CO2 molecule. What do you notice about its structure?
+    # You have built a CO2 molecule. What do you notice about its structure?
     action_text = str(action).rstrip()
     separator = " " if action_text.endswith((".", "?", "!")) else ". "
-    return f"I see you {action_text}{separator}{followup}"
+    return f"You have {action_text}{separator}{followup}"
 
 
 class AppletRuleResponder(WorkflowAgent):
@@ -72,7 +74,6 @@ class AppletRuleResponder(WorkflowAgent):
             logger.warning("AppletRuleResponder.run agents=None")
 
         feedback = build_deterministic_applet_feedback(artifact.content)
-
         response = TextArtifact(
             producer=self.id,
             step=context.step,
@@ -99,8 +100,11 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
     """
 
     default_args = {
+        "subject_id": "TODO_SUBJECT_ID",
+        "subject_label": "TODO_SUBJECT_LABEL",
         "domain_id": "TODO_DOMAIN_ID",
         "domain_label": "TODO_DOMAIN_LABEL",
+        "context_summary": "TODO_ACTIVE_TUTORING_CONTEXT",
         "domain_description": "TODO_DOMAIN_DESCRIPTION",
         "learning_targets": "TODO_LEARNING_TARGETS",
         "applet_id": "TODO_APPLET_ID_FOR_DOMAIN",
@@ -115,13 +119,17 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         You are a helpful and patient chemistry tutor {tutor_name}.
 
         You are tutoring the currently selected chemistry curriculum domain.
+        Active tutoring context: {context_summary}
 
         Current domain:
+        - subject: {subject_label} ({subject_id})
         - id: {domain_id}
         - title: {domain_label}
         - description: {domain_description}
         - learning targets: {learning_targets}
 
+        To allow the student to explore and discover concepts, you are tutoring with a chemistry applet.
+                                      
         Current applet:
         - id: {applet_id}
         - name: {applet_name}
@@ -146,8 +154,9 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         - ask only one question at a time
         - ask one focused next-step question, not a menu of options
         - you may add one brief remark before the question if it helps learning
+        - stay inside the active tutoring context unless the student explicitly asks to change topic
         - do not list multiple possible activities unless the student explicitly asks for choices
-        - when the latest user turn is applet input, start with "I see you clicked ..." or "I see you selected ..." and name only the selected object
+        - when the latest user turn is applet input, start with "You have clicked ..." or "You have selected ..." and name only the selected object
         - after acknowledging the click or selection, do not repeat the full applet state or list properties that were clicked
         - use at most one observed value from the applet state if it is needed for the reasoning question
         - prefer conceptual questions that ask the student to reason from the visible applet state
@@ -161,7 +170,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         - when an element and valence count are visible, prefer a question about bonding, ion formation, group similarity, or reactivity over a question about changing display modes
         - bad response pattern: "Would you like me to switch the atom view so you can inspect it?"
         - bad response pattern: "I see Oxygen, atomic number 8, mass 16.00, nonmetal, gas, 6 valence electrons..."
-        - better response pattern: "I see you clicked Oxygen. With 6 valence electrons, how many more would complete its outer shell?"
+        - better response pattern: "You have clicked Oxygen. With 6 valence electrons, how many more would complete its outer shell?"
         - do not assume a specific applet schema; use the current applet contract
         - treat the current applet state as evidence; do not override it with a student's typed answer
         - compare the student's latest claim with the applet state and recent dialog before responding
@@ -323,6 +332,15 @@ def build_chem_applet_prompt_args(
 
     domain = domain or {}
     applet = applet or {}
+    subject_id = domain.get("subject") or domain.get("subject_id") or ChemLlmTutor.default_args["subject_id"]
+    subject_label = domain.get("subject_label") or subject_id or ChemLlmTutor.default_args["subject_label"]
+    domain_id = domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"]
+    domain_label = domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"]
+    context_parts = [
+        str(part)
+        for part in (subject_label, domain_label)
+        if part and not str(part).startswith("TODO_")
+    ]
 
     return {
         **ChemLlmTutor.default_args,
@@ -331,8 +349,11 @@ def build_chem_applet_prompt_args(
         "history": history,
         "student_progress": student_progress,
         "student_belief": student_belief,
-        "domain_id": domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"],
-        "domain_label": domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"],
+        "subject_id": subject_id,
+        "subject_label": subject_label,
+        "domain_id": domain_id,
+        "domain_label": domain_label,
+        "context_summary": " / ".join(context_parts) or ChemLlmTutor.default_args["context_summary"],
         "domain_description": domain.get("description") or ChemLlmTutor.default_args["domain_description"],
         "learning_targets": _compact_json(
             domain.get("targets") or domain.get("learning_targets") or ChemLlmTutor.default_args["learning_targets"]

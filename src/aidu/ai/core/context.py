@@ -8,13 +8,60 @@ from rich.pretty import Pretty
 from rich.text import Text
 from rich import box
 
-from pydantic import BaseModel, Field
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .artifacts import Artifact, TextArtifact
 
 # role and content are harmonized across providers; all other fields are provider-specific
-Message = dict[str, Any]
+
+class Message(BaseModel):
+    """
+    Target message type.
+
+    Only these keys are valid:
+
+        role
+        content
+        actor
+        kind
+
+    Any additional key is rejected during validation.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        validate_assignment=True,
+    )
+
+    role: str | None = None
+    content: str | dict[str, Any] | list[Any] | None = None
+    actor: str | None = None
+    kind: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(exclude_none=True)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.to_dict().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_dict()[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.to_dict()
+
+    def keys(self):
+        return self.to_dict().keys()
+
+    def items(self):
+        return self.to_dict().items()
+
+    def values(self):
+        return self.to_dict().values()
+
 
 # class Message(BaseModel):
 

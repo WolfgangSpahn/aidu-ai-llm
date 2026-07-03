@@ -16,7 +16,7 @@ import json
 import logging
 import sys
 import time
-from typing import get_origin
+from typing import Any, get_origin
 
 from aidu.ai.core.agent_result import AgentResult
 from rich.logging import RichHandler
@@ -162,9 +162,9 @@ class LLMRequester:
             stored_assistant["timestamp"] = timestamp
         return stored_assistant
 
-    def store_turn(self, context: Context, user_message: dict, response: dict) -> Context:
+    def store_turn(self, context: Context, user_message: Message | dict[str, Any], response: dict) -> Context:
         """Append one user/assistant turn to context.trace.messages."""
-        stored_user = clean_message(user_message)
+        stored_user = clean_message(self._message_as_dict(user_message))
         stored_user["duration"] = 0.0
         stored_user["prompt_tokens"] = 0
         stored_user["completion_tokens"] = 0
@@ -183,18 +183,31 @@ class LLMRequester:
         return context
 
     @staticmethod
-    def _is_current_message_duplicate(trace_message: Message, current_message: Message) -> bool:
-        if trace_message.get("role") != current_message.get("role"):
+    def _message_as_dict(message: Message | dict[str, Any]) -> dict[str, Any]:
+        if isinstance(message, dict):
+            return message
+        if hasattr(message, "model_dump"):
+            return message.model_dump(exclude_none=True)
+        if hasattr(message, "to_dict"):
+            return message.to_dict()
+        raise TypeError(f"Unsupported message type: {type(message).__name__}")
+
+    @staticmethod
+    def _is_current_message_duplicate(trace_message: Message | dict[str, Any], current_message: Message | dict[str, Any]) -> bool:
+        trace_message_dict = LLMRequester._message_as_dict(trace_message)
+        current_message_dict = LLMRequester._message_as_dict(current_message)
+
+        if trace_message_dict.get("role") != current_message_dict.get("role"):
             return False
 
-        trace_content = str(trace_message.get("content") or "").strip()
-        current_content = str(current_message.get("content") or "").strip()
+        trace_content = str(trace_message_dict.get("content") or "").strip()
+        current_content = str(current_message_dict.get("content") or "").strip()
         if not trace_content or not current_content:
             return False
 
         return trace_content == current_content or trace_content.endswith(current_content)
 
-    def _context_for_llm_call(self, context: Context, message: Message, prompt_params=None) -> Context:
+    def _context_for_llm_call(self, context: Context, message: Message | dict[str, Any], prompt_params=None) -> Context:
         """Return a call-only context whose trace starts with a system prompt.
 
         Runtime ``context.trace.messages`` is dialog history. Provider clients
@@ -221,7 +234,7 @@ class LLMRequester:
             }
         )
 
-    def ask(self, message: Message, context: Context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
+    def ask(self, message: Message | dict[str, Any], context: Context, ask_params=None, ask_config: AskConfig | None = None) -> tuple[AssistantResult, Context]:  # type: ignore
         """
         Execute a single LLM request.
 
@@ -256,7 +269,8 @@ class LLMRequester:
         Function calls are returned but not executed automatically.
         """
 
-        effective_context = self._context_for_llm_call(context, message=message, prompt_params=ask_params)
+        message_dict = self._message_as_dict(message)
+        effective_context = self._context_for_llm_call(context, message=message_dict, prompt_params=ask_params)
 
         # inject instance-level tools into the per-call config
         from dataclasses import replace as dataclass_replace
@@ -278,9 +292,9 @@ class LLMRequester:
         # ----------------------------------------
         _t0 = time.perf_counter()
 
-        logger.debug(f"client ask() called with message: {message} and system message:\n{effective_context.get_system_message()['content']}")
+        logger.debug(f"client ask() called with message: {message_dict} and system message:\n{effective_context.get_system_message()['content']}")
         logger.debug(f"- this functions available for call: {list(self.function_lookup.keys())}")
-        response = self.client.ask(message, effective_context, config=ask_config)
+        response = self.client.ask(message_dict, effective_context, config=ask_config)
 
         # ----------------------------------------
         # update context with usage data

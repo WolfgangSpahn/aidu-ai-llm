@@ -1,4 +1,4 @@
-from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.llm.clients.openai import _chat_completion_message
 from aidu.ai.llm.requester import LLMRequester
 
@@ -85,6 +85,37 @@ def test_ask_drops_duplicate_current_message_from_effective_llm_history():
         {
             "role": "user",
             "content": "Why is hydrogen a gas?",
+        },
+    ]
+
+
+def test_ask_accepts_message_model_for_duplicate_detection_and_client_call():
+    client = CapturingClient()
+    requester = LLMRequester(
+        client=client,
+        prompt_template="System prompt.",
+    )
+    context = Context(
+        trace=Trace(
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Applet event: applet-build-an-atom",
+                },
+            ]
+        )
+    )
+
+    requester.ask(Message(role="user", content="Applet event: applet-build-an-atom"), context)
+
+    assert client.messages == [
+        {
+            "role": "system",
+            "content": "System prompt.",
+        },
+        {
+            "role": "user",
+            "content": "Applet event: applet-build-an-atom",
         },
     ]
 
