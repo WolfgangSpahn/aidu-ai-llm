@@ -8,6 +8,7 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
     "aidu-support",
     "aidu-ai-archetype",
+    "aidu-backend-applets",
 
     "pydantic>=2.0",
     "rich>=14.3.2",
@@ -62,6 +63,7 @@ include = [
 [tool.uv.sources]
 aidu-support = { path = "../aidu-support", editable = true }
 aidu-ai-archetype = { path = "../aidu-ai-archetype", editable = true }
+aidu-backend-applets = { path = "../aidu-backend-applets", editable = true }
 
 [tool.ruff]
 line-length = 180

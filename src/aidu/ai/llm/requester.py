@@ -34,7 +34,7 @@ from .clients.openai import OpenAIClient
 from .prompter import Prompter
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 AssistantResult: TypeAlias = Message | AgentResult
 
@@ -268,7 +268,7 @@ class LLMRequester:
 
         Function calls are returned but not executed automatically.
         """
-
+        logger.debug(f"ask_config for this call: {ask_config}")
         message_dict = self._message_as_dict(message)
         effective_context = self._context_for_llm_call(context, message=message_dict, prompt_params=ask_params)
 
@@ -286,6 +286,20 @@ class LLMRequester:
             ask_config = AskConfig(
                 tools=self.tools,
             )
+        # log ask_config for debugging
+        logger.debug(f"ask_config for this call: {ask_config}")
+        logger.debug("LLM message count: %s", len(effective_context.trace.messages))
+
+        for idx, msg in enumerate(effective_context.trace.messages):
+            content = msg.get("content", "")
+            logger.debug(
+                "LLM msg[%s] role=%s chars=%s preview=%r",
+                idx,
+                msg.get("role"),
+                len(str(content)),
+                str(content)[:500],
+            )
+
 
         # ----------------------------------------
         # Call the LLM client
@@ -515,7 +529,7 @@ if __name__ == "__main__":
     # Setup logging
     console = Console()
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format="%(funcName)s - %(message)s",
         handlers=[RichHandler(console=console)],
     )

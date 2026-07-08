@@ -10,6 +10,7 @@ OpenAI LLM client implementation.
 import logging
 import os
 import sys
+import inspect
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -76,6 +77,31 @@ def _chat_completion_message(message: dict) -> dict:
             if key in allowed_keys
         }
     )
+
+
+def _normalize_vendor_config(vendor_config: dict | None) -> dict:
+    if not vendor_config:
+        return {}
+
+    normalized = dict(vendor_config)
+    reasoning = normalized.pop("reasoning", None)
+    if isinstance(reasoning, dict) and "effort" in reasoning:
+        normalized.setdefault("reasoning_effort", reasoning["effort"])
+    elif reasoning is not None:
+        normalized.setdefault("reasoning_effort", reasoning)
+    return normalized
+
+
+def _filter_supported_kwargs(callable_obj, kwargs: dict) -> dict:
+    signature = inspect.signature(callable_obj)
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+        return kwargs
+
+    supported = set(signature.parameters)
+    dropped = sorted(key for key in kwargs if key not in supported)
+    if dropped:
+        logger.debug("Dropping unsupported OpenAI chat completion kwargs: %s", dropped)
+    return {key: value for key, value in kwargs.items() if key in supported}
 
 
 class OpenAIClient(Client):
@@ -167,10 +193,32 @@ class OpenAIClient(Client):
         if response_format:
             kwargs["response_format"] = response_format
 
+        if config is not None:
+            if config.temperature is not None:
+                kwargs["temperature"] = config.temperature
+            if config.max_tokens is not None:
+                kwargs["max_completion_tokens"] = config.max_tokens
+            if config.vendor_config:
+                kwargs.update(_normalize_vendor_config(config.vendor_config))
+        elif self.config.get("max_tokens") is not None:
+            kwargs["max_completion_tokens"] = self.config["max_tokens"]
+        elif self.config.get("max_output_tokens") is not None:
+            kwargs["max_completion_tokens"] = self.config["max_output_tokens"]
+
+        kwargs = _filter_supported_kwargs(self.client.chat.completions.create, kwargs)
+
         # Respect a configured timeout (seconds) if provided in client config
         timeout = self.config.get("timeout", 30)
-        logger.debug(f"Sending request to OpenAI with model={self.model}, timeout={timeout}s, json_mode={json_mode}, tools={'enabled' if tools else 'none'}")
-        logger.debug(f"Request messages kwargs: {kwargs.keys()}")
+        logger.debug(
+            "Sending request to OpenAI with model=%s, timeout=%ss, json_mode=%s, tools=%s, max_completion_tokens=%s",
+            self.model,
+            timeout,
+            json_mode,
+            "enabled" if tools else "none",
+            kwargs.get("max_completion_tokens"),
+        )
+
+        logger.info("Request messages kwargs /wo messages: %s", {k: v for k, v in kwargs.items() if k != "messages"})
         logger.debug(f"Request messages: {kwargs['messages'][1:]}")
 
         try:
@@ -180,7 +228,11 @@ class OpenAIClient(Client):
             # Return a safe assistant message indicating the error so the caller can proceed
             return {"role": "assistant", "content": f"Error calling LLM: {exc}", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "model": self.model}
 
-        message = response.choices[0].message.model_dump()
+        choice = response.choices[0]
+        message = choice.message.model_dump()
+        finish_reason = getattr(choice, "finish_reason", None)
+        if finish_reason is not None:
+            message["finish_reason"] = finish_reason
         usage = response.usage
 
         if usage is not None:
@@ -193,7 +245,19 @@ class OpenAIClient(Client):
             message["completion_tokens"] = completion_tokens
             message["total_tokens"] = total_tokens
             message["cost_usd"] = _estimate_cost_usd(self.model, prompt_tokens, completion_tokens)
+            if hasattr(usage, "model_dump"):
+                usage_data = usage.model_dump()
+                if usage_data.get("completion_tokens_details"):
+                    message["completion_tokens_details"] = usage_data["completion_tokens_details"]
         message["model"] = self.model
+
+        if not message.get("content"):
+            logger.warning(
+                "OpenAI response had empty content finish_reason=%s completion_tokens=%s details=%s",
+                message.get("finish_reason"),
+                message.get("completion_tokens"),
+                message.get("completion_tokens_details"),
+            )
 
         # --- normalize tool call ---
         if "tool_calls" in message and message["tool_calls"]:

@@ -10,10 +10,12 @@ import textwrap
 from typing import Any
 
 from aidu.ai.core.agent_result import AgentResult
+from aidu.ai.core.applet_info import AppletInfo
 from aidu.ai.core.artifacts import AppletArtifact, TextArtifact
 from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.agent import EndAgent, UserInput, WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
+from aidu.backend.applets.registry import derive_applet_payload, derive_info_analysis, update_student_progress
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -26,7 +28,42 @@ def _compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def build_deterministic_applet_feedback(applet_content: dict[str, Any]) -> str | None:
+def analyze_applet_content(
+    applet_content: dict[str, Any],
+    last_applet_content: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return applet content enriched with backend-derived infoStore values."""
+
+    try:
+        return derive_applet_payload(applet_content, last_payload=last_applet_content)
+    except Exception:
+        logger.exception("Applet infoStore analysis failed")
+        return applet_content
+
+
+def _last_applet_payload_from_trace(
+    context: Context,
+    current_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return the most recent prior applet payload from trace, if available."""
+    for message in reversed(context.trace.messages):
+        if not isinstance(message, dict):
+            continue
+        applet_info = AppletInfo.from_message(message)
+        if not applet_info:
+            continue
+        payload = applet_info.to_state()
+        if isinstance(payload, dict) and payload != current_payload:
+            return payload
+    return None
+
+
+def build_deterministic_applet_feedback(
+    applet_content: dict[str, Any],
+    analysis: dict[str, Any] | None = None,
+    *,
+    analyze: bool = True,
+) -> str | None:
     """
     Build deterministic feedback for the given applet content.
 
@@ -36,17 +73,21 @@ def build_deterministic_applet_feedback(applet_content: dict[str, Any]) -> str |
     Returns:
         A string containing the feedback, or None if no feedback is applicable.
     """
-    info_store = applet_content["infoStore"]
-    action = info_store.get("action")
-    followup = info_store.get("followup")
-    if not action or not followup:
+    applet_content = analyze_applet_content(applet_content) if analyze else applet_content
+    info_store = applet_content.get("infoStore")
+    if not isinstance(info_store, dict):
         return "You have clicked this. What was your intent"
-
-    # generate feedback based on the action type, like this
-    # You have built a CO2 molecule. What do you notice about its structure?
-    action_text = str(action).rstrip()
-    separator = " " if action_text.endswith((".", "?", "!")) else ". "
-    return f"You have {action_text}{separator}{followup}"
+    if not isinstance(analysis, dict):
+        analysis = derive_info_analysis(
+            str(applet_content.get("applet") or ""),
+            info_store,
+        )
+    if not isinstance(analysis, dict):
+        return "You have clicked this. What was your intent"
+    followup = analysis.get("followup")
+    if not isinstance(followup, str) or not followup:
+        return "You have clicked this. What was your intent"
+    return followup
 
 
 class AppletRuleResponder(WorkflowAgent):
@@ -73,7 +114,36 @@ class AppletRuleResponder(WorkflowAgent):
         else:
             logger.warning("AppletRuleResponder.run agents=None")
 
-        feedback = build_deterministic_applet_feedback(artifact.content)
+        last_applet_payload = _last_applet_payload_from_trace(context, artifact.content)
+        applet_content = analyze_applet_content(
+            applet_content=artifact.content,
+            last_applet_content=last_applet_payload,
+        )
+        artifact.content.update(applet_content)
+        applet_id = str(applet_content.get("applet") or "")
+        current_info_store = applet_content.get("infoStore") if isinstance(applet_content.get("infoStore"), dict) else {}
+        previous_info_store = (
+            last_applet_payload.get("infoStore")
+            if isinstance(last_applet_payload, dict) and isinstance(last_applet_payload.get("infoStore"), dict)
+            else None
+        )
+        analysis = derive_info_analysis(
+            applet_id,
+            current_info_store,
+            last_info_store=previous_info_store,
+        )
+        if analysis:
+            context.state.data["LastAppletInfo"] = analysis
+        student_progress = context.state.data.get("StudentProgress")
+        if isinstance(student_progress, dict):
+            update_student_progress(
+                applet_id,
+                student_progress,
+                student_goal=context.state.data.get("StudentGoal", {}),
+                info_store=current_info_store,
+                last_info_store=previous_info_store,
+            )
+        feedback = build_deterministic_applet_feedback(applet_content, analysis=analysis, analyze=False)
         response = TextArtifact(
             producer=self.id,
             step=context.step,
@@ -112,6 +182,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         "applet_description": "TODO_APPLET_DESCRIPTION",
         "applet_remote_control": "TODO_APPLET_REMOTE_CONTROL_CONTRACT",
         "applet_info_store_schema": "TODO_APPLET_INFO_STORE_SCHEMA",
+        "applet_tutor_instructions": "TODO_APPLET_TUTOR_INSTRUCTIONS",
         "applet_state": "TODO_CURRENT_APPLET_INFO_STORE",
     }
 
@@ -137,6 +208,9 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         - remote-control contract: {applet_remote_control}
         - info-store schema: {applet_info_store_schema}
 
+        Applet-specific tutoring instructions:
+        {applet_tutor_instructions}
+
         Current applet state:
         {applet_state}
 
@@ -156,21 +230,32 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         - you may add one brief remark before the question if it helps learning
         - stay inside the active tutoring context unless the student explicitly asks to change topic
         - do not list multiple possible activities unless the student explicitly asks for choices
+        - focus on probing the student's understanding, not checking isolated facts
+        - avoid recall-style questions such as "what is the atomic number?" when the answer is visible or factual
+        - prefer questions that ask the student to explain why, predict what will happen, compare two cases, or connect an observation to a concept
+        - when a fact is needed, provide it briefly as shared evidence and ask what it implies
+        - probe the student's mental model by asking for reasoning behind their prediction or choice
+        - avoid micro-questioning: do not follow a correct explanation with the same tiny numeric variation
+        - once the student shows the charge-count relationship, move to the broader pattern or consequence instead of asking "what if one more/two more?"
+        - bad response pattern after the student explains one electron changes charge by one: "If you add two electrons, what net charge would it have?"
         - when the latest user turn is applet input, start with "You have clicked ..." or "You have selected ..." and name only the selected object
         - after acknowledging the click or selection, do not repeat the full applet state or list properties that were clicked
         - use at most one observed value from the applet state if it is needed for the reasoning question
-        - prefer conceptual questions that ask the student to reason from the visible applet state
+        - prefer conceptual questions that ask the student to reason from the visible applet state rather than name or copy a displayed value
+        - follow the applet-specific tutoring instructions for interpreting labels, schemas, and example response patterns
         - use the applet state as shared evidence; do not ask the student to click merely to confirm a value already shown in the applet state
+        - when explaining an applet-specific label, first point to the visible label and connect it to the concept name
         - only ask the student to manipulate the applet when a new observation is needed for the next reasoning step
+        - when the student states an intended applet action or prediction that is not yet reflected in the current applet state, make the next turn one simple move: either ask a reasoning question or invite one applet update, not both
+        - if the next move is an applet update, give only that single applet action and do not append a reporting task such as "tell me what it shows" or "what do you observe afterward"
+        - do not replace an applet-action next step with a purely conceptual follow-up question
         - do not turn learning targets into a checklist of clicks or confirmations
         - avoid instructions like "click", "switch", "open", "select", or "change view" unless the student's next action must produce new evidence
         - do not offer to operate the applet for the student unless they explicitly ask you to and remote control is enabled
         - if remote control is disabled, never say "would you like me to switch/open/change" anything in the applet
         - if the applet already shows the relevant value, ask what the value means or predicts
-        - when an element and valence count are visible, prefer a question about bonding, ion formation, group similarity, or reactivity over a question about changing display modes
         - bad response pattern: "Would you like me to switch the atom view so you can inspect it?"
-        - bad response pattern: "I see Oxygen, atomic number 8, mass 16.00, nonmetal, gas, 6 valence electrons..."
-        - better response pattern: "You have clicked Oxygen. With 6 valence electrons, how many more would complete its outer shell?"
+        - bad response pattern: "Remove the electron in the applet and tell me what net charge it shows afterward."
         - do not assume a specific applet schema; use the current applet contract
         - treat the current applet state as evidence; do not override it with a student's typed answer
         - compare the student's latest claim with the applet state and recent dialog before responding
@@ -366,6 +451,9 @@ def build_chem_applet_prompt_args(
         ),
         "applet_info_store_schema": _compact_json(
             applet.get("info_store_schema") or ChemLlmTutor.default_args["applet_info_store_schema"]
+        ),
+        "applet_tutor_instructions": _compact_json(
+            applet.get("tutor_instructions") or ChemLlmTutor.default_args["applet_tutor_instructions"]
         ),
         "applet_state": _compact_json(
             applet_state if applet_state is not None else ChemLlmTutor.default_args["applet_state"]

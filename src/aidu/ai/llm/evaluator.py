@@ -47,14 +47,14 @@ class Evaluator(LLMRequester):
                 return json.loads(json_str)
             raise
 
-    def _run_chat(self, user_prompt: str, eval_params: dict, chat_config: AskConfig | None = None) -> tuple[dict, Context]:
+    def _run_chat(self, user_prompt: str, eval_params: dict, ask_config: AskConfig | None = None) -> tuple[dict, Context]:
         """Run one evaluator turn through the shared requester chat contract."""
         system_messages = self.build_system_prompt(prompt_params=eval_params)
         context = Context(trace=Trace(messages=system_messages))
         return self.ask(
             message={"role": "user", "content": user_prompt},
             context=context,
-            chat_config=chat_config,
+            ask_config=ask_config,
         )
 
     def evaluate(self, user_prompt="", eval_params: dict = None, enforce_json: bool = True) -> list[float] | None:
@@ -78,7 +78,7 @@ class Evaluator(LLMRequester):
             message, _ = self._run_chat(
                 user_prompt=user_prompt,
                 eval_params=eval_params,
-                chat_config=chat_config,
+                ask_config=chat_config,
             )
 
             response_text = message.get("content", "")

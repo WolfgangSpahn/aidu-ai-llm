@@ -16,8 +16,11 @@ user-visible reply string.
 
 from __future__ import annotations
 
+import inspect
+
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.artifacts import Artifact, TextArtifact
+from aidu.ai.core.config import AskConfig
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.recommendation import Recommendation
 from aidu.ai.llm.agent import Agent
@@ -72,6 +75,21 @@ def result_text(result: AgentResult) -> str:
     return "\n".join(parts)
 
 
+def run_agent(
+    agent: Agent,
+    *,
+    artifact: Artifact,
+    context: Context,
+    agents: list[Agent],
+    ask_config: AskConfig | None = None,
+) -> tuple[AgentResult, Context]:
+    """Run an agent, passing optional LLM ask configuration when supported."""
+    signature = inspect.signature(agent.run)
+    if "ask_config" in signature.parameters:
+        return agent.run(artifact=artifact, context=context, agents=agents, ask_config=ask_config)
+    return agent.run(artifact=artifact, context=context, agents=agents)
+
+
 def run_agent_text_turn(
     *,
     starting_agent: Agent,
@@ -79,6 +97,7 @@ def run_agent_text_turn(
     context: Context | None = None,
     agents: list[Agent] | None = None,
     prompt_params: dict | None = None,
+    ask_config: AskConfig | None = None,
     max_hops: int = 0,
 ) -> tuple[AgentResult, Context]:
     """
@@ -95,6 +114,7 @@ def run_agent_text_turn(
         context=context,
         agents=agents,
         prompt_params=prompt_params,
+        ask_config=ask_config,
         max_hops=max_hops,
     )
 
@@ -106,6 +126,7 @@ def run_agent_artifact_turn(
     context: Context | None = None,
     agents: list[Agent] | None = None,
     prompt_params: dict | None = None,
+    ask_config: AskConfig | None = None,
     max_hops: int = 0,
 ) -> tuple[AgentResult, Context]:
     """
@@ -118,7 +139,13 @@ def run_agent_artifact_turn(
     context = prepare_agent_context(starting_agent, context=context, prompt_params=prompt_params)
     artifact.step = context.step
 
-    result, context = starting_agent.run(artifact=artifact, context=context, agents=agents)
+    result, context = run_agent(
+        starting_agent,
+        artifact=artifact,
+        context=context,
+        agents=agents,
+        ask_config=ask_config,
+    )
 
     for _ in range(max_hops):
         recommendation = select_recommendation(result)
@@ -126,7 +153,13 @@ def run_agent_artifact_turn(
             break
         next_agent = find_agent(agents, recommendation.target)
         artifact = select_artifact(result)
-        result, context = next_agent.run(artifact=artifact, context=context, agents=agents)
+        result, context = run_agent(
+            next_agent,
+            artifact=artifact,
+            context=context,
+            agents=agents,
+            ask_config=ask_config,
+        )
 
     return result, context
 
@@ -138,6 +171,7 @@ def run_agent_artifact_chat_turn(
     context: Context | None = None,
     agents: list[Agent] | None = None,
     prompt_params: dict | None = None,
+    ask_config: AskConfig | None = None,
     max_hops: int = 0,
 ) -> tuple[str, Context]:
     """
@@ -149,6 +183,7 @@ def run_agent_artifact_chat_turn(
         context=context,
         agents=agents,
         prompt_params=prompt_params,
+        ask_config=ask_config,
         max_hops=max_hops,
     )
     return result_text(result), context

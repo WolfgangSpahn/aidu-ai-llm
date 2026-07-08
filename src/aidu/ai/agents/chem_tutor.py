@@ -1,5 +1,5 @@
 """
-Math tutor agent
+Chem tutor agent
 """
 
 import os

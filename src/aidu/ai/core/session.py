@@ -104,3 +104,5 @@ class RoutedMessage(BaseModel):
     session_id: str | None = None
     applet: str | None = None
     applet_command: dict[str, Any] | None = None
+    backend_belief_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
+    backend_progress_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
