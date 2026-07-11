@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Dr. Wolfgang Spahn, PHBern
+#
+# MIT License — see LICENSE file for details.
+# If you use this software in academic work, citation of the original author is requested.
 """
 Chat bot assistant that can have a conversation with the user. It uses a simple prompt template and can be extended with more complex behavior as needed.
 """

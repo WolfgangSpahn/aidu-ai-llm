@@ -1,4 +1,10 @@
 /*
+ * Copyright (C) 2026 Dr. Wolfgang Spahn, PHBern
+ *
+ * MIT License — see LICENSE file for details.
+ * If you use this software in academic work, citation of the original author is requested.
+ */
+/*
  * Copyright (c) 2026 Wolfgang Spahn, PHBern
  * Licensed under the MIT License.
  * Please follow standard academic practice when using this software in research or publications.

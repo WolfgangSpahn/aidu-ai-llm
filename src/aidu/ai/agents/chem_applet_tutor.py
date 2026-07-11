@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Dr. Wolfgang Spahn, PHBern
+#
+# MIT License — see LICENSE file for details.
+# If you use this software in academic work, citation of the original author is requested.
 """
 Domain- and applet-aware chemistry LLM tutor agent.
 
@@ -6,12 +10,13 @@ T
 
 import json
 import logging
+import re
 import textwrap
 from typing import Any
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.applet_info import AppletInfo
-from aidu.ai.core.artifacts import AppletArtifact, TextArtifact
+from aidu.ai.core.artifacts import AppletArtifact, JsonArtifact, TextArtifact
 from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.agent import EndAgent, UserInput, WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
@@ -20,12 +25,44 @@ from aidu.backend.applets.registry import derive_applet_payload, derive_info_ana
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+_DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE = (
+    "No problem. We will stop here, and you can come back to the activity later."
+)
+
 
 def _compact_json(value: Any) -> str:
     """Serialize prompt placeholder values in a stable, readable form."""
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+_CLOSE_DIALOG_INTENT_PATTERNS = (
+    re.compile(r"\b(i\s+)?(have|need|got)\s+to\s+(go|leave|run)\b"),
+    re.compile(r"\bgotta\s+(go|leave|run)\b"),
+    re.compile(r"\b(i'?m|i am)\s+(done|finished)\b"),
+    re.compile(r"\b(finish|end|close|stop|quit)\s+(this\s+)?(activity|dialog|chat|session)\b"),
+    re.compile(r"\b(go|come)\s+back\s+to\s+(welcome|activity|activities|lesson)\b"),
+    re.compile(r"\breturn\s+to\s+(welcome|activity|activities|lesson)\b"),
+    re.compile(r"\bresume\s+later\b"),
+)
+
+
+def _student_wants_to_close_dialog(text: str) -> bool:
+    """
+    Detect clear student requests to leave the AI activity.
+
+    This deterministic guard catches high-confidence closing language before
+    the LLM can answer conversationally instead of emitting the close event.
+    """
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    if not normalized:
+        return False
+    if re.search(r"\b(do not|don't|dont|not)\s+(close|end|finish|stop|quit)\b", normalized):
+        return False
+    if re.search(r"\bnot\s+(done|finished)\b", normalized):
+        return False
+    return any(pattern.search(normalized) for pattern in _CLOSE_DIALOG_INTENT_PATTERNS)
 
 
 def analyze_applet_content(
@@ -262,6 +299,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         - if the student's answer conflicts with the applet state, name the mismatch explicitly and gently
         - do not praise an incorrect answer as correct; acknowledge the attempt, state the observed value, and ask a reasoning question that helps repair the idea
         - do not switch to a different element, molecule, or applet state just because the student typed a number or name
+        - if the student says they need to leave, have to go, are done, want to stop, want to end/finish the activity, want to go back, or want to resume later, call fc_close_dialog immediately with one short friendly final_message instead of asking whether they want to resume later
         - if the applet contract allows remote control, you may call the generic applet command function
         - let the student discover concepts through the simulation before giving explanations
         - use clear educational language appropriate for {level}
@@ -290,6 +328,13 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
             str(state.get("applet_state", ""))[:240],
             artifact.content[:240],
         )
+        if _student_wants_to_close_dialog(artifact.content):
+            logger.info(
+                "ChemLlmTutor.close_dialog_intent_detected artifact_prefix=%r",
+                artifact.content[:240],
+            )
+            return self.fc_close_dialog(context, final_message=_DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE)
+
         result, context = self.ask(Message(role="user", content=artifact.content), context, ask_params=state)
         logger.warning("ChemLlmTutor.response %s", result.content())
         return result, context
@@ -305,6 +350,50 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
             applet_id,
         )
         return str(applet_id)
+
+    def fc_close_dialog(
+        self,
+        context: Context,
+        final_message: str = _DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE,
+    ) -> tuple[AgentResult, Context]:
+        """
+        Close and finalize the current AI activity.
+
+        Use this when the student says they need to leave, have to go, are
+        done, want to stop, want to end or finish the activity, want to go
+        back to the activity list, or want to resume later. It emits the
+        ai_activity_finalized event that tells the frontend to leave chat and
+        return to the student's activity plan.
+
+        Args:
+            final_message (str): One short friendly goodbye message to show to
+                the student before the frontend returns to the activity list.
+        """
+        producer = f"{self.id}:fc_close_dialog"
+        safe_final_message = final_message.strip() or _DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE
+        farewell = TextArtifact(
+            producer=producer,
+            step=context.step,
+            content=safe_final_message,
+        )
+        event = JsonArtifact(
+            producer=producer,
+            step=context.step,
+            content={
+                "type": "ai_activity_finalized",
+                "reason": "dialog_closed",
+                "message": "Closing dialog and returning to student activity plan.",
+            },
+        )
+        recommendation = self.register_recommendation(
+            "default",
+            target=EndAgent,
+            continuations=[],
+            utility=1.0,
+            rationale="User requested to close dialog and return to student activity plan.",
+        )
+        logger.info("ChemLlmTutor.fc_close_dialog event=%s", event.content)
+        return self.result([event, farewell], [recommendation]), context
 
     def fc_change_active_applet(
         self,

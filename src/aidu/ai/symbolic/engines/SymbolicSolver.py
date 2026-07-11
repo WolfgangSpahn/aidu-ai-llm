@@ -1,3 +1,7 @@
+# Copyright (C) 2026 Dr. Wolfgang Spahn, PHBern
+#
+# MIT License — see LICENSE file for details.
+# If you use this software in academic work, citation of the original author is requested.
 from aidu.ai.core.artifacts import SymbolicArtifact
 from aidu.ai.llm.agent import UtilityAgent
 from aidu.ai.symbolic.engine import Engine
