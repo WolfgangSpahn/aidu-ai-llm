@@ -194,7 +194,17 @@ class Context(BaseModel):
         Typed runtime context carrying history, mutable state, and control data.
     """
 
+    model_config = ConfigDict(
+        populate_by_name=True,
+        validate_assignment=True,
+    )
+
     step: int = 0
+    on_air: bool = Field(
+        default=True,
+        alias="onAir",
+        description="Whether ask-capable LLM clients may contact an external provider.",
+    )
 
     trace: Trace = Field(
         default_factory=Trace,
@@ -213,7 +223,7 @@ class Context(BaseModel):
 
     def __str__(self):
         artifacts_str = ", ".join(f"{k}: {v}" for k, v in self.artifacts.items())
-        return f"Context(step={self.step}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={artifacts_str})"
+        return f"Context(step={self.step}, on_air={self.on_air}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={artifacts_str})"
     
     def create_agent_states(self, agents):
         """

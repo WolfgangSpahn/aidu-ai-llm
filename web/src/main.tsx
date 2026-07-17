@@ -18,11 +18,7 @@
 
 import { createSignal, createEffect, For, Show } from 'solid-js';
 import { render } from 'solid-js/web';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import katex from 'katex';
-// @ts-ignore
-import 'katex/dist/katex.min.css';
+import { renderBlendedMarkdown } from 'applet-support/blended-marked';
 
 const APP_VERSION = '0.2.5';
 console.log(`AIDU AI LLM Web v${APP_VERSION} loaded`);
@@ -202,81 +198,6 @@ function getMessageMetaLabel(messages: Message[], index: number): string | null 
   const cost = formatCost(msg.cost_usd);
   const parts = [duration, tokens, cost].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" | ") : null;
-}
-
-// ---------------------------------------------------------------------------
-// Markdown + LaTeX renderer
-// ---------------------------------------------------------------------------
-
-marked.setOptions({ breaks: true, gfm: true });
-
-// Converts plain text that may contain Markdown + LaTeX into safe HTML.
-function renderMarkdownWithMath(text: string): string {
-  // Map temporary placeholders -> original math expression.
-  const mathPlaceholders: { [key: string]: string } = {};
-  let mathCounter = 0;
-
-  // Finds regex defined math syntax and temporarily replaces it with a marker,
-  // so Markdown processing does not accidentally alter the math content.
-  const protectMath = (regex: RegExp, kind: 'DISPLAY' | 'INLINE') => {
-    text = text.replace(regex, (_, math) => {
-      const placeholder = `XMATHX${kind}${mathCounter}XMATHX`;
-      mathPlaceholders[placeholder] = math.trim();
-      mathCounter++;
-      return placeholder;
-    });
-  };
-
-  // All math syntaxes we support, in matching order.
-  const mathPatterns: Array<{ regex: RegExp; kind: 'DISPLAY' | 'INLINE' }> = [
-    // Matches display math written as $$ ... $$ (multiline allowed).
-    { regex: /\$\$([\s\S]*?)\$\$/g,          kind: 'DISPLAY' },
-    // Matches display math written as \[ ... \] (multiline allowed).
-    { regex: /\\\[([\s\S]*?)\\\]/g,          kind: 'DISPLAY' },
-    // Matches inline math written as \( ... \) (multiline allowed).
-    { regex: /\\\(([\s\S]*?)\\\)/g,          kind: 'INLINE' },
-    // Matches inline math written as $ ... $, while avoiding $$ ... $$ blocks.
-    // (?<!\$) and (?!\$) are lookaround checks to ensure the $ is single.
-    // [^\$\n]+ keeps inline math on one line and stops at the next $.
-    { regex: /(?<!\$)\$([^\$\n]+)\$(?!\$)/g, kind: 'INLINE' },
-  ];
-
-  // Step 1: protect math before Markdown conversion.
-  for (const { regex, kind } of mathPatterns) {
-    protectMath(regex, kind);
-  }
-
-  // Step 2: convert Markdown to HTML.
-  let html = marked(text) as string;
-
-  // Step 3: sanitize generated HTML to reduce XSS risk.
-  html = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                   'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'span', 'div', 'a', 'svg', 'path', 'g'],
-    ALLOWED_ATTR: ['class', 'style', 'href', 'viewBox', 'width', 'height', 'd', 'transform', 'fill', 'stroke'],
-  });
-
-  for (const [placeholder, math] of Object.entries(mathPlaceholders)) {
-    try {
-      const isDisplay = placeholder.includes('DISPLAY');
-      // Step 4: render math safely with KaTeX and insert it back into HTML.
-      const rendered = katex.renderToString(math, {
-        displayMode: isDisplay,
-        throwOnError: false,
-        strict: false,
-      });
-      const mathHtml = isDisplay
-        ? `<div class="math-display">${rendered}</div>`
-        : `<span class="math-inline">${rendered}</span>`;
-      html = html.replaceAll(placeholder, mathHtml);
-    } catch (e) {
-      // Fallback: show raw math as code if KaTeX fails on this expression.
-      console.error('KaTeX render error:', e);
-      html = html.replaceAll(placeholder, `<code>${math}</code>`);
-    }
-  }
-
-  return html;
 }
 
 // ---------------------------------------------------------------------------
@@ -585,7 +506,7 @@ function App() {
               </Show>
               <div
                 class={`msg ${msg.role}`}
-                innerHTML={renderMarkdownWithMath(msg.content)}
+                innerHTML={renderBlendedMarkdown(msg.content)}
               />
             </div>
           )}

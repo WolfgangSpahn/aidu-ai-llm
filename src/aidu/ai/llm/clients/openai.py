@@ -25,7 +25,7 @@ from rich.table import Table
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import AskConfig
-from ..client import Client, clean_message
+from ..client import Client, clean_message, maybe_off_air_response
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,9 @@ class OpenAIClient(Client):
         Tool calls are not executed automatically; they are returned to the
         caller for handling.
         """
+        if response := maybe_off_air_response(context, self.model):
+            return response
+
         json_mode = config.json_mode if config else self.config.get("enforce_json", False)
         response_format = {"type": "json_object"} if json_mode else None
 

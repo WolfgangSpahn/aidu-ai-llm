@@ -24,7 +24,7 @@ from rich.table import Table
 
 from aidu.ai.core.context import Context, Trace
 from aidu.ai.core.config import AskConfig
-from ..client import Client, clean_message
+from ..client import Client, clean_message, maybe_off_air_response
 
 from aidu.support.filesystem.search import find_up
 
@@ -90,6 +90,9 @@ class GoogleClient(Client):
         Returns:
             Message dict with role, content, token counts, and cost
         """
+        if response := maybe_off_air_response(context, self.model):
+            return response
+
         # Build generation config and pass only keys explicitly set by client config.
         generation_config = {}
         if "temperature" in self.config:
