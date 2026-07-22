@@ -29,7 +29,6 @@ from aidu.ai.llm.fc_requester import LLMFcRequester
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class MathTutor(WorkflowAgent, LLMFcRequester):

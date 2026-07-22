@@ -8,7 +8,8 @@ SMOKE_MODULES=\
 	aidu.ai.llm.clients.google \
 	aidu.ai.llm.clients.sympy \
 	aidu.ai.llm.requester \
-	aidu.ai.llm.plugin
+	aidu.ai.llm.plugin \
+	aidu.ai.agents.chem_student
 
 include ../aidu-dev-tools/python-package.mk
 

@@ -331,6 +331,7 @@ class LLMRequester:
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
             "cost_usd": cost_usd,
+            "time_to_first_token_seconds": response.get("time_to_first_token_seconds"),
         }
 
         # -----------------------------------------
@@ -343,7 +344,7 @@ class LLMRequester:
 
         if fc_result:
             # for a function call, our main response content is the function call itself
-            logger.info(f"LLM requests function call: {fc_result['name']}({fc_result['arguments']})")
+            logger.debug(f"LLM requests function call: {fc_result['name']}({fc_result['arguments']})")
             fn = self.function_lookup.get(fc_result["name"])
             args = json.loads(fc_result["arguments"])
 

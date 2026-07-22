@@ -3,6 +3,7 @@ from aidu.ai.agents.chem_applet_tutor import (
     build_chem_applet_prompt_args,
     build_deterministic_applet_feedback,
 )
+from aidu.backend.applets.registry import build_applet_info_store
 
 
 def test_chem_applet_tutor_prompt_motivates_applet_updates_after_text_predictions():
@@ -62,16 +63,13 @@ def test_applet_rule_feedback_derives_build_an_atom_followup_from_infostore():
     feedback = build_deterministic_applet_feedback(
         {
             "applet": "applet-build-an-atom",
-            "infoStore": {
-                "protonCount": 1,
-                "neutronCount": 0,
-                "innerElectronCount": 0,
-                "outerElectronCount": 0,
-                "charge": 1,
-                "mass": 1,
-                "elementSymbol": "H",
-                "isStable": True,
-            },
+            "infoStore": build_applet_info_store(
+                "applet-build-an-atom",
+                proton_count=1,
+                neutron_count=0,
+                inner_electron_count=0,
+                outer_electron_count=0,
+            ),
         }
     )
 

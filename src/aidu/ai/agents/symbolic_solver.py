@@ -26,7 +26,6 @@ from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.symbolic.engine import Engine
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 TRANSFORMATIONS = standard_transformations + (

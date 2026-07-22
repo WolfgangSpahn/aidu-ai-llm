@@ -20,7 +20,6 @@ from aidu.ai.llm.assistant import LLMAssistant
 from aidu.ai.llm.clients.openai import OpenAIClient, make_openai_client
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class ChatBot(LLMAssistant):

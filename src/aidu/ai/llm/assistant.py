@@ -27,7 +27,6 @@ from aidu.ai.core.agent_result import AgentResult
 from .fc_requester import LLMFcRequester
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class LLMAssistant(LLMFcRequester):

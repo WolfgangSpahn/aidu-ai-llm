@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 import inspect
+import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -109,7 +110,14 @@ def _filter_supported_kwargs(callable_obj, kwargs: dict) -> dict:
 
 
 class OpenAIClient(Client):
-    def __init__(self, model=None, config={}, api_key=None):
+    def __init__(self, model=None, config={}, api_key=None, *, stream: bool = True):
+        """Create an OpenAI client.
+
+        ``stream`` defaults to true. Set it to false for the legacy complete-
+        response request path. Streaming requests still return the same final
+        normalized message; callers may receive text deltas through the
+        turn-scoped ``stream_callback`` stored in ``Context.control.data``.
+        """
 
         if model is None:
             logger.warning("No model specified for OpenAIClient, defaulting to gpt-4o-mini")
@@ -117,13 +125,14 @@ class OpenAIClient(Client):
 
         if api_key is None:
             env_path = find_up(".env")
-            logger.warning("No API key provided, loading environment variables from %s", env_path)
+            logger.debug("No API key provided, loading environment variables from %s", env_path)
             load_dotenv(env_path)
-            api_key = os.getenv("OPENAI_API_KEY")
-            assert api_key, "Missing OPENAI_API_KEY in .env"
+            api_key = os.getenv("OPENAI_API_PHBERN_KEY")
+            assert api_key, "Missing OPENAI_API_PHBERN_KEY in .env"
 
         super().__init__(model=model, config=config)
         self.client = OpenAI(api_key=api_key)
+        self.stream = stream
 
     def ask(self, message, context, config: AskConfig | None = None):
         """
@@ -225,22 +234,73 @@ class OpenAIClient(Client):
             kwargs.get("max_completion_tokens"),
         )
 
-        logger.info("Request messages kwargs /wo messages: %s", {k: v for k, v in kwargs.items() if k != "messages"})
+        logger.debug("Request messages kwargs /wo messages: %s", {k: v for k, v in kwargs.items() if k != "messages"})
         logger.debug(f"Request messages: {kwargs['messages'][1:]}")
 
         try:
-            response = self.client.chat.completions.create(timeout=timeout, **kwargs)
+            if self.stream:
+                request_started = time.perf_counter()
+                time_to_first_token = None
+                stream = self.client.chat.completions.create(
+                    timeout=timeout,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    **kwargs,
+                )
+                content_parts: list[str] = []
+                tool_calls: dict[int, dict] = {}
+                finish_reason = None
+                usage = None
+                on_delta = context.control.data.get("stream_callback")
+                for chunk in stream:
+                    usage = getattr(chunk, "usage", None) or usage
+                    for choice in getattr(chunk, "choices", []) or []:
+                        finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+                        delta = choice.delta.model_dump(exclude_none=True)
+                        content_delta = delta.get("content") or ""
+                        if time_to_first_token is None and (content_delta or delta.get("tool_calls")):
+                            time_to_first_token = time.perf_counter() - request_started
+                            logger.info(
+                                "OpenAI time to first token model=%s seconds=%.3f",
+                                self.model,
+                                time_to_first_token,
+                            )
+                        if content_delta:
+                            content_parts.append(content_delta)
+                            if callable(on_delta):
+                                on_delta(content_delta)
+                        for tool_delta in delta.get("tool_calls") or []:
+                            index = int(tool_delta.get("index", 0))
+                            accumulated = tool_calls.setdefault(
+                                index,
+                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                            )
+                            accumulated["id"] += tool_delta.get("id") or ""
+                            function_delta = tool_delta.get("function") or {}
+                            accumulated["function"]["name"] += function_delta.get("name") or ""
+                            accumulated["function"]["arguments"] += function_delta.get("arguments") or ""
+                message = {
+                    "role": "assistant",
+                    "content": "".join(content_parts),
+                }
+                if tool_calls:
+                    message["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
+                if finish_reason is not None:
+                    message["finish_reason"] = finish_reason
+                if time_to_first_token is not None:
+                    message["time_to_first_token_seconds"] = time_to_first_token
+            else:
+                response = self.client.chat.completions.create(timeout=timeout, **kwargs)
+                choice = response.choices[0]
+                message = choice.message.model_dump()
+                finish_reason = getattr(choice, "finish_reason", None)
+                if finish_reason is not None:
+                    message["finish_reason"] = finish_reason
+                usage = response.usage
         except Exception as exc:
             logger.exception("OpenAI client request failed")
             # Return a safe assistant message indicating the error so the caller can proceed
             return {"role": "assistant", "content": f"Error calling LLM: {exc}", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "model": self.model}
-
-        choice = response.choices[0]
-        message = choice.message.model_dump()
-        finish_reason = getattr(choice, "finish_reason", None)
-        if finish_reason is not None:
-            message["finish_reason"] = finish_reason
-        usage = response.usage
 
         if usage is not None:
             prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)

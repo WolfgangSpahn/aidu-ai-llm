@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from aidu.ai.core.context import Message
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class SessionInfo(BaseModel):

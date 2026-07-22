@@ -20,7 +20,6 @@ from aidu.ai.core.context import Context, Message, Trace
 from aidu.ai.core.recommendation import Recommendation
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class UtilityResult(BaseModel):
@@ -289,6 +288,8 @@ class BeginAgent(WorkflowAgent):
         agents: list[Agent],
         target: type[Agent],
     ) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
         from rich import get_console
         from rich.panel import Panel
         from rich.pretty import Pretty

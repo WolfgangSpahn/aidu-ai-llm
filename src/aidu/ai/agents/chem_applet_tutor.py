@@ -20,10 +20,10 @@ from aidu.ai.core.artifacts import AppletArtifact, JsonArtifact, TextArtifact
 from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.agent import EndAgent, UserInput, WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
-from aidu.backend.applets.registry import derive_applet_payload, derive_info_analysis, update_student_progress
+from aidu.backend.applets.registry import derive_applet_payload, derive_info_analysis
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
 
 _DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE = (
     "No problem. We will stop here, and you can come back to the activity later."
@@ -171,15 +171,6 @@ class AppletRuleResponder(WorkflowAgent):
         )
         if analysis:
             context.state.data["LastAppletInfo"] = analysis
-        student_progress = context.state.data.get("StudentProgress")
-        if isinstance(student_progress, dict):
-            update_student_progress(
-                applet_id,
-                student_progress,
-                student_goal=context.state.data.get("StudentGoal", {}),
-                info_store=current_info_store,
-                last_info_store=previous_info_store,
-            )
         feedback = build_deterministic_applet_feedback(applet_content, analysis=analysis, analyze=False)
         response = TextArtifact(
             producer=self.id,
@@ -317,7 +308,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         state = context.state.data.get(self.__class__.__name__, {})
         if not state:
             state = context.state.data.get(ChemLlmTutor.__name__, {})
-        logger.warning(
+        logger.debug(
             "ChemLlmTutor.run agent_class=%s state_keys=%s domain=%s:%s applet=%s:%s applet_state=%s artifact_prefix=%r",
             self.__class__.__name__,
             sorted(state.keys()),
@@ -336,7 +327,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
             return self.fc_close_dialog(context, final_message=_DEFAULT_CLOSE_DIALOG_FINAL_MESSAGE)
 
         result, context = self.ask(Message(role="user", content=artifact.content), context, ask_params=state)
-        logger.warning("ChemLlmTutor.response %s", result.content())
+        logger.debug("ChemLlmTutor.response %s", result.content())
         return result, context
 
     def _active_applet_id(self, context: Context) -> str:
