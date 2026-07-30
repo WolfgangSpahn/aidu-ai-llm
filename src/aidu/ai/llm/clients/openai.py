@@ -131,7 +131,10 @@ class OpenAIClient(Client):
             assert api_key, "Missing OPENAI_API_PHBERN_KEY in .env"
 
         super().__init__(model=model, config=config)
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(
+            api_key=api_key,
+            max_retries=int(config.get("max_retries", 2)),
+        )
         self.stream = stream
 
     def ask(self, message, context, config: AskConfig | None = None):

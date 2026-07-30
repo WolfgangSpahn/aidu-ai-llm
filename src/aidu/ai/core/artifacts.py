@@ -3,6 +3,7 @@
 # MIT License — see LICENSE file for details.
 # If you use this software in academic work, citation of the original author is requested.
 # src/aidu/ai/core/artifacts.py
+import json
 import logging
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Annotated
@@ -22,6 +23,10 @@ class Artifact(BaseModel):
     type: str
     step: int
     content: Any = None
+
+    def to_text(self) -> str:
+        """Return the canonical text representation of structured content."""
+        return json.dumps(self.content, ensure_ascii=False, sort_keys=True)
 
     def pretty(self) -> Panel:
         """Return a Rich Panel renderable for this artifact.
@@ -48,6 +53,10 @@ class TextArtifact(Artifact):
     type: Literal["text"] = "text"
     content: str
 
+    def to_text(self) -> str:
+        """Return text content unchanged."""
+        return self.content
+
 
 class SymbolicArtifact(Artifact):
     type: Literal["symbolic"] = "symbolic"
@@ -58,9 +67,24 @@ class AppletArtifact(Artifact):
     type: Literal["applet"] = "applet"
     content: dict[str, Any]
 
+    def to_text(self) -> str:
+        """Serialize the structured applet event deterministically."""
+        return json.dumps(self.content, ensure_ascii=False, sort_keys=True)
+
+    def is_outbound_command(self) -> bool:
+        """Return whether this artifact contains a command addressed to an applet."""
+        return bool(self.content.get("applet") and self.content.get("command"))
+
 
 class JsonArtifact(Artifact):
     type: Literal["json"] = "json"
+    content: dict[str, Any]
+
+
+class ActivityEventArtifact(Artifact):
+    """Structured lifecycle event emitted for the current learning activity."""
+
+    type: Literal["activity_event"] = "activity_event"
     content: dict[str, Any]
 
 
@@ -78,14 +102,31 @@ class ErrorArtifact(Artifact):
     type: Literal["error"] = "error"
     content: Any
 
-class EndArtifact(Artifact):
-    type: Literal["text"] = "text"
-    content: str
+class EndArtifact(TextArtifact):
+    """Final text artifact emitted when a workflow ends."""
 
 ArtifactType = Annotated[
-    TextArtifact | SymbolicArtifact | AppletArtifact | EvidenceArtifact | BeliefArtifact | ErrorArtifact,
+    TextArtifact
+    | SymbolicArtifact
+    | AppletArtifact
+    | ActivityEventArtifact
+    | EvidenceArtifact
+    | BeliefArtifact
+    | ErrorArtifact,
     Field(discriminator="type"),
 ]
+
+
+def latest_display_artifact(artifacts: list[Artifact]) -> TextArtifact | None:
+    """Return the most recent text artifact suitable for display to the user."""
+    return next(
+        (
+            artifact
+            for artifact in reversed(artifacts)
+            if isinstance(artifact, TextArtifact)
+        ),
+        None,
+    )
 
 
 def create_artifact(artifact_type: str, id: str, producer: str, step: int, content: Any) -> Artifact:
@@ -105,6 +146,10 @@ def create_artifact(artifact_type: str, id: str, producer: str, step: int, conte
         if not isinstance(content, dict):
             raise TypeError(f"applet artifact requires 'content' of type dict, got {type(content).__name__}")
         return AppletArtifact(id=id, producer=producer, step=step, content=content)
+    elif artifact_type == "activity_event":
+        if not isinstance(content, dict):
+            raise TypeError(f"activity_event artifact requires 'content' of type dict, got {type(content).__name__}")
+        return ActivityEventArtifact(id=id, producer=producer, step=step, content=content)
     elif artifact_type == "evidence":
         if not isinstance(content, dict):
             raise TypeError(f"evidence artifact requires 'content' of type dict, got {type(content).__name__}")

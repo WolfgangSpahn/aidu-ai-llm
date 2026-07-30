@@ -41,14 +41,28 @@ from aidu.ai.llm.clients.openai import OpenAIClient
 from aidu.ai.llm.assistants.mathAssistent_ass import MathAssistent
 from aidu.ai.llm.evaluators.uncertainty import UncertaintyEvaluator
 from aidu.ai.llm.agent import EndAgent
-from aidu.ai.llm.agent_runner import run_agent_artifact_chat_turn, run_agent_chat_turn
-from aidu.ai.core.artifacts import AppletArtifact
-from aidu.ai.core.context import Context
+from aidu.ai.core.artifacts import AppletArtifact, TextArtifact
+from aidu.ai.core.context import Context, Messages
 from aidu.ai.agents.chem_applet_tutor import AppletRuleResponder, ChemLlmTutor, ChemLlmUserInput
 from aidu.ai.agents.math_tutor import MathTutor
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
 
 load_dotenv()
+
+
+def _run_demo_agent(starting_agent, artifact, context, agents) -> tuple[str, Context]:
+    """Run one demo agent directly and convert its artifacts to display text."""
+    result, context = starting_agent.run(
+        artifact=artifact,
+        context=context,
+        agents=agents,
+    )
+    reply = "\n".join(
+        artifact.content
+        for artifact in result.artifacts
+        if isinstance(artifact.content, str) and artifact.content
+    )
+    return reply, context
 
 # ---------------------------------------------------------------------------
 # Rich Logging Setup
@@ -159,7 +173,7 @@ AGENT_PROMPT_ARGS = {
         "tutor_name": "",
         "level": "beginner",
         "history": "",
-        "student_progress": "",
+        "student_knowledge_progress": "",
         "student_belief": "",
         "domain_id": "chemistry-basics",
         "domain_label": "Chemistry Basics",
@@ -177,7 +191,7 @@ AGENT_PROMPT_ARGS = {
         "focus_area": "general math",
         "level": "beginner",
         "history": "",
-        "student_progress": "",
+        "student_knowledge_progress": "",
         "student_beliefs": "",
     },
 }
@@ -398,7 +412,7 @@ class RunnableDescriptor(BaseModel):
 
 class HistoryResponse(BaseModel):
     session_id: str
-    messages: list[dict]
+    messages: Messages
 
 
 class EvaluateRequest(BaseModel):
@@ -487,23 +501,20 @@ def _run_chat(
             if body.input_type == "applet":
                 starting_agent, agents = _make_agent_applet_workflow(runnable.id)
                 logger.debug(f"Calling {runnable.id} applet workflow...")
-                reply, context = run_agent_artifact_chat_turn(
-                    starting_agent=starting_agent,
-                    artifact=AppletArtifact(producer="user", step=context.step, content=body.applet or {}),
-                    context=context,
-                    agents=agents,
-                    max_hops=0,
+                reply, context = _run_demo_agent(
+                    starting_agent,
+                    AppletArtifact(producer="user", step=context.step, content=body.applet or {}),
+                    context,
+                    agents,
                 )
             else:
                 starting_agent, agents = _make_agent_workflow(runnable.id)
                 logger.debug(f"Calling {runnable.id} text workflow...")
-                reply, context = run_agent_chat_turn(
-                    starting_agent=starting_agent,
-                    user_text=body.message,
-                    context=context,
-                    agents=agents,
-                    prompt_params=AGENT_PROMPT_ARGS.get(runnable.id),
-                    max_hops=0,
+                reply, context = _run_demo_agent(
+                    starting_agent,
+                    TextArtifact(producer="user", step=context.step, content=body.message),
+                    context,
+                    agents,
                 )
             context = _store_plain_chat_turn(context, user_message, reply)
             logger.debug(f" {runnable.id} agent workflow completed and updated context")

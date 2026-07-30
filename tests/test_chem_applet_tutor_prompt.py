@@ -6,41 +6,99 @@ from aidu.ai.agents.chem_applet_tutor import (
 from aidu.backend.applets.registry import build_applet_info_store
 
 
-def test_chem_applet_tutor_prompt_motivates_applet_updates_after_text_predictions():
+def test_chem_applet_tutor_exposes_typed_atom_commands():
+    schemas = {
+        tool["function"]["name"]: tool["function"]
+        for tool in ChemLlmTutor.schema()
+    }
+
+    assert "fc_change_active_applet" not in schemas
+    assert schemas["fc_set_atom"]["parameters"]["required"] == [
+        "protons",
+        "neutrons",
+        "electrons",
+    ]
+    assert schemas["fc_add_particle"]["parameters"]["properties"]["particle"]["enum"] == [
+        "proton",
+        "neutron",
+        "electron",
+    ]
+
+
+def test_chem_applet_tutor_routes_by_current_learner_need_before_progressing():
     prompt = ChemLlmTutor.prompt_template
 
-    assert "make the next turn one simple move" in prompt
-    assert "either ask a reasoning question or invite one applet update, not both" in prompt
-    assert "do not append a reporting task" in prompt
-    assert "Remove the electron in the applet and tell me what net charge it shows afterward." in prompt
-    assert "do not replace an applet-action next step" in prompt
-    assert "Correct — now add that electron in the atom builder" not in prompt
+    assert "latest message has priority over lesson progression" in prompt
+    assert "Do not assume that every turn should advance the activity" in prompt
+    assert "relational: emotion, motivation, resistance" in prompt
+    assert "orienting: confusion about the task" in prompt
 
 
-def test_chem_applet_tutor_prompt_probes_understanding_instead_of_facts():
+def test_chem_applet_tutor_pauses_tasks_for_affective_needs():
     prompt = ChemLlmTutor.prompt_template
 
-    assert "focus on probing the student's understanding" in prompt
-    assert "avoid recall-style questions" in prompt
-    assert "ask the student to explain why, predict what will happen, compare two cases" in prompt
-    assert "rather than name or copy a displayed value" in prompt
+    assert "frustration, low motivation, reluctance, overload" in prompt
+    assert "pause the scientific task" in prompt
+    assert "Help the student regain agency" in prompt
+    assert "Do not assign another task in that" in prompt
 
 
-def test_chem_applet_tutor_prompt_avoids_micro_questioning():
+def test_chem_applet_tutor_preserves_student_control_of_the_applet():
     prompt = ChemLlmTutor.prompt_template
 
-    assert "avoid micro-questioning" in prompt
-    assert "do not follow a correct explanation with the same tiny numeric variation" in prompt
-    assert "move to the broader pattern or consequence" in prompt
-    assert "If you add two electrons, what net charge would it have?" in prompt
+    assert "the student explicitly asks the tutor" in prompt
+    assert "Never call an applet command in response to frustration" in prompt
+    assert "leave control with the student" in prompt
+
+
+def test_chem_applet_tutor_responds_to_meaning_before_applet_state():
+    prompt = ChemLlmTutor.prompt_template
+
+    assert "Respond to the meaning of the latest student message" in prompt
+    assert "Avoid automatic praise such as “Great!”" in prompt
+    assert "never let it override the student's immediate relational" in prompt
+
+
+def test_chem_applet_tutor_uses_discovery_when_student_is_ready():
+    prompt = ChemLlmTutor.prompt_template
+
+    assert "When the student is ready for conceptual or investigative work" in prompt
+    assert "Choose a meaningful investigation" in prompt
+    assert "Prefer reasoning from visible evidence" in prompt
+
+
+def test_chem_applet_tutor_prompt_prefers_holistic_investigations():
+    prompt = ChemLlmTutor.prompt_template
+
+    assert "Prefer one broad investigation or reflection prompt" in prompt
+    assert "compare cases, notice several changes, and explain the pattern" in prompt
+    assert "Do not turn each correct observation into another narrow check question" in prompt
+    assert "Do not narrate each intermediate applet result for the student" in prompt
+
+
+def test_chem_applet_tutor_does_not_repeat_already_answered_questions():
+    prompt = ChemLlmTutor.prompt_template
+
+    assert "Never ask for a fact or observation that the student already stated" in prompt
+    assert "Treat the student's latest statement as their answer" in prompt
+    assert "do not ask what the new charge is" in prompt
+    assert "do not ask the student to remove electrons" in prompt
+
+
+def test_chem_applet_tutor_breaks_repetitive_action_cycles():
+    prompt = ChemLlmTutor.prompt_template
+
+    assert "Do not repeat the response pattern" in prompt
+    assert "After at most two simple one-variable observations" in prompt
+    assert "connect, compare, or summarize" in prompt
 
 
 def test_chem_applet_tutor_prompt_uses_applet_specific_instruction_placeholder():
     prompt = ChemLlmTutor.prompt_template
 
-    assert "Applet-specific tutoring instructions:" in prompt
+    assert "Applet-specific guidance:" in prompt
     assert "{applet_tutor_instructions}" in prompt
-    assert "follow the applet-specific tutoring instructions" in prompt
+    assert "Follow the applet-specific guidance" in prompt
 
 
 def test_chem_applet_tutor_prompt_args_include_applet_specific_instructions():

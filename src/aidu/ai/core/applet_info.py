@@ -2,6 +2,8 @@
 #
 # MIT License — see LICENSE file for details.
 # If you use this software in academic work, citation of the original author is requested.
+
+
 from __future__ import annotations
 
 import json
@@ -24,6 +26,7 @@ class AppletInfo:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "AppletInfo":
+        """Create an AppletInfo from a request payload dictionary."""
         applet = payload.get("applet")
         info_store = payload.get("infoStore")
         return cls(
@@ -34,6 +37,7 @@ class AppletInfo:
 
     @classmethod
     def from_snapshot(cls, snapshot: str) -> "AppletInfo":
+        """Create an AppletInfo from a JSON snapshot string."""
         try:
             parsed = json.loads(snapshot)
         except json.JSONDecodeError:

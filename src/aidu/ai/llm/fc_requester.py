@@ -14,7 +14,7 @@ LLMFcRequester: An LLMRequester subclass that automatically exposes methods pref
 
 import inspect
 import re
-from typing import get_origin, get_args
+from typing import Literal, get_args, get_origin
 from pydantic import BaseModel
 
 from aidu.ai.core.context import Context, Message
@@ -54,11 +54,24 @@ def get_openai_function_schema(func, make_all_required=False):
         # Extract description from docstring if available
         doc_lines = docstring.split("\n")
         for line in doc_lines:
-            if line.strip().startswith(f"{name} ("):
+            if (
+                line.strip().startswith(f"{name} (")
+                or line.strip().startswith(f"{name}:")
+            ):
                 description = line.split(":", 1)[-1].strip()
 
+        if get_origin(annotation) is Literal:
+            allowed_values = list(get_args(annotation))
+            value_type = type(allowed_values[0]) if allowed_values else str
+            type_mapping = {str: "string", int: "integer", bool: "boolean", float: "number"}
+            parameters[name] = {
+                "type": type_mapping.get(value_type, "string"),
+                "enum": allowed_values,
+                "description": description,
+            }
+
         # Handle list of Pydantic models (e.g., list[Phrase])
-        if get_origin(annotation) is list:
+        elif get_origin(annotation) is list:
             item_type = get_args(annotation)[0]
             if isinstance(item_type, type) and issubclass(item_type, BaseModel):
                 parameters[name] = {"type": "array", "items": item_type.model_json_schema(), "description": description}  # Resolve Pydantic model

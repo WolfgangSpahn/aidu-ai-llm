@@ -6,13 +6,79 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any, Iterator
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from aidu.ai.core.context import Message
+from aidu.ai.core.context import Message, Messages
+from aidu.ai.core.knowledge_progress import (
+    EvidenceKnowledgeProgress,
+    StudentKnowledgeProgress,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class SessionContext(BaseModel):
+    """Validated session context shared from backend through assessment agents."""
+
+    model_config = ConfigDict(extra="allow")
+
+    on_air: bool
+    username: str = ""
+    class_name: str = ""
+    class_voucher: str = ""
+    lesson_id: str = ""
+    activity_id: str = ""
+    subject: str = ""
+    subject_label: str = ""
+    domain: str = ""
+    domain_label: str = ""
+    domain_description: str = ""
+    domain_targets: list[dict[str, Any]] = Field(default_factory=list)
+    applet_id: str = ""
+    applet_name: str = ""
+    applet_description: str = ""
+    applet: dict[str, Any] = Field(default_factory=dict)
+
+    def domain_prompt_metadata(self) -> dict[str, Any]:
+        """Return the active curriculum domain in the tutor prompt shape."""
+        return {
+            "subject": self.subject,
+            "subject_label": self.subject_label,
+            "id": self.domain,
+            "label": self.domain_label,
+            "description": self.domain_description,
+            "targets": self.domain_targets,
+        }
+
+    def applet_prompt_metadata(self) -> dict[str, Any]:
+        """Return applet identity and capabilities, excluding its live state."""
+        if self.applet:
+            return self.applet
+        return {
+            "id": self.applet_id,
+            "name": self.applet_name,
+            "description": self.applet_description,
+        }
+
+    def initial_student_knowledge_progress(self) -> StudentKnowledgeProgress:
+        """Initialize evidence state for the teacher-defined domain targets."""
+        metadata_keys = {
+            "progress_update_count",
+            "progress_update_indicator",
+        }
+        return StudentKnowledgeProgress(
+            root={
+                target["id"]: EvidenceKnowledgeProgress(
+                    mastery=0.0,
+                    positive_evidence=0.0,
+                    negative_evidence=4.0,
+                )
+                for target in self.domain_targets
+                if target["id"] not in metadata_keys
+            }
+        )
 
 
 class SessionInfo(BaseModel):
@@ -37,10 +103,10 @@ class SessionInfo(BaseModel):
     )
 
     session_id: str
-    session_context: dict[str, Any]
+    session_context: SessionContext
 
     applet_input: dict[str, Any] | None = None
-    messages: list[dict[str, Any]] | None = None
+    messages: Messages | None = None
 
 
 class SessionResponse(BaseModel):
@@ -109,4 +175,5 @@ class RoutedMessage(BaseModel):
     applet_command: dict[str, Any] | None = None
     activity_event: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
     backend_belief_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
-    backend_progress_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
+    backend_knowledge_progress_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
+    backend_supervision_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)

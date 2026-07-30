@@ -15,6 +15,7 @@ import logging
 import os
 import json
 import re
+import time
 
 from dotenv import load_dotenv
 from google import genai
@@ -31,6 +32,10 @@ from aidu.support.filesystem.search import find_up
 logger = logging.getLogger(__name__)
 
 MODEL_COSTS_USD_PER_1M = {
+    # Gemini 3 generation
+    "gemini-3.6-flash": {"input": 1.50, "output": 7.50},
+    "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
     # Gemini 2.5 generation
     "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
     "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
@@ -55,29 +60,35 @@ def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens:
 
 
 class GoogleClient(Client):
-    def __init__(self, model, config, api_key):
+    def __init__(self, model, config=None, api_key=None, *, stream: bool = True):
+        config = config or {}
+        if api_key is None:
+            env_path = find_up(".env")
+            logger.debug("No Google API key provided, loading environment variables from %s", env_path)
+            load_dotenv(env_path)
+            api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("Missing GOOGLE_API_KEY in .env")
+
         super().__init__(model=model, config=config)
         self.client = genai.Client(api_key=api_key)
+        self.stream = stream
 
     def _convert_tools_to_gemini(self, tools):
         """Convert OpenAI tool format to Gemini tool format."""
         if not tools:
             return None
 
-        gemini_tools = []
+        function_declarations = []
         for tool in tools:
             if tool.get("type") == "function":
                 func = tool.get("function", {})
-                gemini_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": func.get("name"),
-                        "description": func.get("description"),
-                        "parameters": func.get("parameters", {}),
-                    },
-                }
-                gemini_tools.append(gemini_tool)
-        return gemini_tools if gemini_tools else None
+                function_declarations.append({
+                    "name": func.get("name"),
+                    "description": func.get("description"),
+                    "parameters": func.get("parameters", {}),
+                })
+        return [{"function_declarations": function_declarations}] if function_declarations else None
 
     def ask(self, message, context, config: AskConfig | None = None):
         """
@@ -103,6 +114,10 @@ class GoogleClient(Client):
             generation_config["top_k"] = self.config.get("top_k")
         if "max_tokens" in self.config:
             generation_config["max_output_tokens"] = self.config.get("max_tokens")
+        if "thinking_level" in self.config:
+            generation_config["thinking_config"] = {
+                "thinking_level": self.config.get("thinking_level"),
+            }
         json_mode = config.json_mode if config and config.json_mode is not None else self.config.get("enforce_json")
         if json_mode:
             generation_config["response_mime_type"] = "application/json"
@@ -115,23 +130,54 @@ class GoogleClient(Client):
         # Convert context history + current message to Gemini contents format.
         contents = []
         for msg in context.trace.messages:
+            if msg.get("role") == "system":
+                generation_config["system_instruction"] = msg.get("content", "")
+                continue
             role = "user" if msg.get("role") == "user" else "model"
             contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
         current_role = "user" if message.get("role") == "user" else "model"
         contents.append({"role": current_role, "parts": [{"text": message.get("content", "")}]})
 
         # Send message and get response
+        function_call_result = None
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=generation_config or None,
-            )
+            if self.stream:
+                started = time.perf_counter()
+                response = None
+                response_parts: list[str] = []
+                on_delta = context.control.data.get("stream_callback")
+                for chunk in self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=contents,
+                    config=generation_config or None,
+                ):
+                    response = chunk
+                    text_delta = chunk.text or ""
+                    if text_delta:
+                        if not response_parts:
+                            logger.info(
+                                "Gemini time to first token model=%s seconds=%.3f",
+                                self.model,
+                                time.perf_counter() - started,
+                            )
+                        response_parts.append(text_delta)
+                        if callable(on_delta):
+                            on_delta(text_delta)
+                    function_call_result = self._function_call_from_response(chunk) or function_call_result
+                if response is None:
+                    raise ValueError("Gemini stream ended without a response")
+                response_text = "".join(response_parts)
+            else:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=generation_config or None,
+                )
+                response_text = response.text if response.text else ""
+                function_call_result = self._function_call_from_response(response)
         except Exception as exc:
             raise ValueError(f"Gemini API call failed: {exc}") from exc
 
-        # Extract response content
-        response_text = response.text if response.text else ""
         if json_mode:
             # text is typpicallly a ``json ...`` block, but could also be direct JSON or even non-JSON if the model didn't follow instructions. Normalize it.
             response_text = self._normalize_json_text(response_text)
@@ -157,25 +203,26 @@ class GoogleClient(Client):
         result["model"] = self.model
 
         # --- handle function calls if present ---
-        if hasattr(response, "candidates") and response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                func_call = getattr(part, "function_call", None)
-                if not func_call:
-                    continue
-
-                func_name = getattr(func_call, "name", None)
-                if not func_name:
-                    continue
-
-                func_args = getattr(func_call, "args", None) or {}
-                result["function_call"] = {
-                    "name": func_name,
-                    "arguments": json.dumps(dict(func_args)),
-                }
-                break
+        if function_call_result:
+            result["function_call"] = function_call_result
 
         result = clean_message(result)
         return result
+
+    @staticmethod
+    def _function_call_from_response(response):
+        if not getattr(response, "candidates", None):
+            return None
+        content = response.candidates[0].content
+        for part in getattr(content, "parts", []) or []:
+            func_call = getattr(part, "function_call", None)
+            func_name = getattr(func_call, "name", None) if func_call else None
+            if func_name:
+                return {
+                    "name": func_name,
+                    "arguments": json.dumps(dict(getattr(func_call, "args", None) or {})),
+                }
+        return None
 
     @staticmethod
     def _normalize_json_text(text: str) -> str:

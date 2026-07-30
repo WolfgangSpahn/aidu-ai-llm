@@ -2,7 +2,7 @@ import sys
 import types
 
 from aidu.ai.core.artifacts import TextArtifact
-from aidu.ai.core.context import Context, Trace
+from aidu.ai.core.context import Context, Messages, Trace
 from aidu.ai.llm.agent import BeginAgent, EndAgent
 
 
@@ -26,7 +26,7 @@ def test_begin_agent_passes_initial_artifact_to_target(monkeypatch):
 
 def test_begin_agent_trace_rows_truncate_content_and_mark_placeholders():
     rows = BeginAgent._trace_message_rows(
-        [
+        Messages(root=[
             {
                 "role": "system",
                 "content": "You are a tutor for {level}. " + ("long " * 40),
@@ -35,7 +35,7 @@ def test_begin_agent_trace_rows_truncate_content_and_mark_placeholders():
                 "role": "user",
                 "content": "Hydrogen selected",
             },
-        ],
+        ]),
         max_content_length=40,
     )
 
@@ -44,14 +44,14 @@ def test_begin_agent_trace_rows_truncate_content_and_mark_placeholders():
 
 
 def test_begin_agent_placeholder_detection_ignores_dict_repr_keys():
-    assert BeginAgent._content_has_placeholders("{student_progress}")
+    assert BeginAgent._content_has_placeholders("{student_knowledge_progress}")
     assert BeginAgent._content_has_placeholders("{primary_weight:.0%}")
     assert not BeginAgent._content_has_placeholders("{'elementSymbol': 'H'}")
 
 
 def test_begin_agent_trace_rows_preview_structured_applet_payload():
     rows = BeginAgent._trace_message_rows(
-        [
+        Messages(root=[
             {
                 "role": "user",
                 "kind": "applet",
@@ -64,7 +64,7 @@ def test_begin_agent_trace_rows_preview_structured_applet_payload():
                     },
                 },
             },
-        ],
+        ]),
     )
 
     assert rows[0] == (
@@ -77,12 +77,12 @@ def test_begin_agent_trace_rows_preview_structured_applet_payload():
 
 def test_begin_agent_trace_rows_default_to_100_character_preview():
     rows = BeginAgent._trace_message_rows(
-        [
+        Messages(root=[
             {
                 "role": "system",
                 "content": "word " * 40,
             },
-        ],
+        ]),
     )
 
     assert len(rows[0][2]) <= 100
@@ -91,12 +91,12 @@ def test_begin_agent_trace_rows_default_to_100_character_preview():
 
 def test_begin_agent_trace_rows_mark_empty_content():
     rows = BeginAgent._trace_message_rows(
-        [
+        Messages(root=[
             {
                 "role": "system",
                 "content": "",
             },
-        ],
+        ]),
     )
 
     assert rows[0] == (0, "system", "<empty>", False)

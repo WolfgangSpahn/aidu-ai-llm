@@ -376,6 +376,27 @@ class StudentBelief(BaseModel):
 
         return " ".join(observations)
 
+
+class StudentBeliefSnapshot(BaseModel):
+    """Complete belief vector required from a student-belief assessment."""
+
+    engagement: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    confusion: float = Field(ge=0.0, le=1.0)
+    frustration: float = Field(ge=0.0, le=1.0)
+    curiosity: float = Field(ge=0.0, le=1.0)
+    self_explanation: float = Field(ge=0.0, le=1.0)
+    guessing: float = Field(ge=0.0, le=1.0)
+    help_seeking: float = Field(ge=0.0, le=1.0)
+
+
+class StudentBeliefAssessment(BaseModel):
+    """Structured output contract of ``StudentBeliefAssessor``."""
+
+    belief: StudentBeliefSnapshot
+    review: bool
+
+
 if __name__ == "__main__":
     belief = StudentBelief()
     belief.engagement = 0.8

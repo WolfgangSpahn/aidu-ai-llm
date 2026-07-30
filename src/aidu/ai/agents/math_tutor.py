@@ -21,9 +21,9 @@ from aidu.support.regex.validate import assert_valid_sympy_problem
 
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Message
+from aidu.ai.core.config import AskConfig
 from aidu.ai.llm.clients.openai import OpenAIClient
 from aidu.ai.llm.agent import WorkflowAgent, UserInput, EndAgent
-from aidu.ai.llm.agent_runner import run_agent_text_turn
 from aidu.ai.llm.fc_requester import LLMFcRequester
 
 from aidu.ai.agents.symbolic_solver import SymbolicSolver
@@ -65,7 +65,7 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
         
         and the students progress: 
                                       
-        {student_progress}. 
+        {student_knowledge_progress}.
                                       
         Here our current assessment of the student's beliefs: 
                                       
@@ -101,14 +101,27 @@ class MathTutor(WorkflowAgent, LLMFcRequester):
                   
         """).strip()
 
-    def run(self, artifact: TextArtifact, context: Context, agents=None) -> tuple[AgentResult, Context]:
+    def run(
+        self,
+        artifact: TextArtifact,
+        context: Context,
+        agents=None,
+        *,
+        ask_params: dict | None = None,
+        ask_config: AskConfig | None = None,
+    ) -> tuple[AgentResult, Context]:
 
         # validate that our target and continuations are present in the provided agents list, if any
         if agents is not None:
             self.validate_target_continuations_against_agents(agents)
 
         # ask the LLM using standard LLMAgent patterns
-        return self.ask(Message(role="user", content=artifact.content), context)
+        return self.ask(
+            Message(role="user", content=artifact.content),
+            context,
+            ask_params=ask_params,
+            ask_config=ask_config,
+        )
     
 
     def fc_route_symbolic_solver(self, context: Context, problem: str) -> tuple[AgentResult, Context]:
@@ -211,15 +224,16 @@ def smoke_test(console):
         "focus_area": "general math",
         "level": "beginner",
         "history": "",
-        "student_progress": "",
+        "student_knowledge_progress": "",
         "student_beliefs": "",
     }
 
-    result, context = run_agent_text_turn(
-        starting_agent=starting_agent,
-        user_text=problem,
+    context = Context()
+    result, context = starting_agent.run(
+        artifact=TextArtifact(producer="user", step=0, content=problem),
+        context=context,
         agents=agents,
-        prompt_params=prompt_params,
+        ask_params=prompt_params,
     )
 
     return result, context

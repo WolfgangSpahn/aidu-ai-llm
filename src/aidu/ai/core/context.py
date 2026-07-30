@@ -6,17 +6,26 @@
 
 from __future__ import annotations
 
+import copy
+import logging
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.text import Text
 from rich import box
 
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, overload
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .artifacts import Artifact, TextArtifact
+from .applet_info import AppletInfo
+from .belief import StudentBelief
+from .knowledge_progress import StudentKnowledgeProgress
+from .supervisor import SupervisorState
+
+logger = logging.getLogger(__name__)
 
 # role and content are harmonized across providers; all other fields are provider-specific
 
@@ -66,6 +75,154 @@ class Message(BaseModel):
     def values(self):
         return self.to_dict().values()
 
+    @staticmethod
+    def clean_dialog_record(
+        message: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Normalize one persisted record for LLM dialog history."""
+        role = message.get("role")
+        if role not in {"user", "assistant"}:
+            return None
+
+        applet_info = AppletInfo.from_message(message)
+        if applet_info:
+            applet_state_text = applet_info.to_text()
+            student_text = str(message.get("content") or "").strip()
+            content = (
+                f"{applet_state_text}\nStudent said: {student_text}"
+                if student_text
+                and not student_text.lower().startswith("applet event:")
+                else applet_state_text
+            )
+        else:
+            content = str(message.get("content") or "").strip()
+
+        if not content:
+            return None
+
+        cleaned: dict[str, Any] = {"role": role, "content": content}
+        applet_input = message.get("applet_input")
+        if message.get("kind") == "applet" and isinstance(applet_input, dict):
+            cleaned["kind"] = "applet"
+            cleaned["applet_input"] = applet_input
+        return cleaned
+
+
+class Messages(RootModel[list[dict[str, Any]]]):
+    """Conversation records plus access to the latest persisted learner state.
+
+    The root list preserves the API wire format. Each record may contain the
+    core message fields and backend-owned per-turn state snapshots.
+    """
+
+    root: list[dict[str, Any]] = Field(default_factory=list)
+
+    def latest_knowledge_progress(self) -> StudentKnowledgeProgress:
+        """Return the newest persisted knowledge snapshot, or an empty state."""
+        for message in reversed(self.root):
+            state = message.get("backend_knowledge_progress_state")
+            if state is not None:
+                return StudentKnowledgeProgress.model_validate(state).clamped()
+        return StudentKnowledgeProgress(root={})
+
+    def latest_belief(self) -> StudentBelief:
+        """Return the newest persisted student-belief snapshot, or its default."""
+        for message in reversed(self.root):
+            state = message.get("backend_belief_state")
+            if state is not None:
+                return StudentBelief.model_validate(state)
+        return StudentBelief()
+
+    def before_last(self) -> "Messages":
+        """Return all records preceding the current turn."""
+        return Messages(root=self.root[:-1])
+
+    def recent(self, limit: int) -> "Messages":
+        """Return at most the newest ``limit`` conversation records."""
+        return Messages(root=self.root[-limit:])
+
+    def cleaned_dialog(self, limit: int = 10) -> "Messages":
+        """Return recent user and assistant records normalized for an LLM."""
+        return Messages(
+            root=[
+                cleaned
+                for message in self.recent(limit)
+                if (cleaned := Message.clean_dialog_record(message))
+            ]
+        )
+
+    def dialog_history(self, limit: int = 10) -> str:
+        """Render recent normalized records as tutor prompt history."""
+        cleaned = self.cleaned_dialog(limit)
+        if not cleaned:
+            return " - No previous dialog turns are available."
+        return "\n".join(
+            f" - {message['role']}: {message['content']}"
+            for message in cleaned
+        )
+
+    def applet_state_before_last_tutor_message(self) -> dict[str, Any]:
+        """Return the applet snapshot visible when the last tutor turn began."""
+        last_tutor_index = next(
+            (
+                index
+                for index in range(len(self.root) - 1, -1, -1)
+                if self.root[index].get("role") == "assistant"
+            ),
+            None,
+        )
+        if last_tutor_index is None:
+            return {}
+
+        for message in reversed(self.root[:last_tutor_index]):
+            applet_info = AppletInfo.from_message(message)
+            if applet_info:
+                return applet_info.to_state()
+        return {}
+
+    def append(self, message: Message | dict[str, Any]) -> None:
+        """Append one core or backend-enriched message record."""
+        if isinstance(message, Message):
+            self.root.append(message.to_dict())
+            return
+        self.root.append(message)
+
+    def __len__(self) -> int:
+        return len(self.root)
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        return iter(self.root)
+
+    def __bool__(self) -> bool:
+        return bool(self.root)
+
+    @overload
+    def __getitem__(self, index: int) -> dict[str, Any]: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[dict[str, Any]]: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        return self.root[index]
+
+    def __setitem__(
+        self, index: int, message: Message | dict[str, Any]
+    ) -> None:
+        self.root[index] = message.to_dict() if isinstance(message, Message) else message
+
+    def __add__(
+        self, other: list[Message | dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return self.root + [
+            message.to_dict() if isinstance(message, Message) else message
+            for message in other
+        ]
+
+    def __reversed__(self) -> Iterator[dict[str, Any]]:
+        return reversed(self.root)
+
 
 # class Message(BaseModel):
 
@@ -80,13 +237,15 @@ class Message(BaseModel):
 class Trace(BaseModel):
     """Trace of messages exchanged so far in the conversation."""
 
-    messages: list[dict[str, Any]] = Field(
-        default_factory=list,
+    model_config = ConfigDict(validate_assignment=True)
+
+    messages: Messages = Field(
+        default_factory=Messages,
         description="List of messages exchanged in the conversation so far.",
     )
 
-    def __init__(self, messages=None):
-        super().__init__(messages=messages or [])
+    def __init__(self, messages: Messages | list[dict[str, Any]] | None = None):
+        super().__init__(messages=messages or Messages())
 
     def __str__(self):
         trace_messages_str = "\n - ".join(f"{msg}" for msg in self.messages[1:])
@@ -202,7 +361,6 @@ class Context(BaseModel):
     step: int = 0
     on_air: bool = Field(
         default=True,
-        alias="onAir",
         description="Whether ask-capable LLM clients may contact an external provider.",
     )
 
@@ -221,13 +379,22 @@ class Context(BaseModel):
 
     artifacts: dict[str, Artifact] = Field(default_factory=dict)
 
+    def for_assessor(self) -> "Context":
+        """Copy this turn context without its response-stream callback."""
+        assessor_context = copy.deepcopy(self)
+        assessor_context.control.data.pop("stream_callback", None)
+        return assessor_context
+
     def __str__(self):
         artifacts_str = ", ".join(f"{k}: {v}" for k, v in self.artifacts.items())
         return f"Context(step={self.step}, on_air={self.on_air}, trace={self.trace}, state={self.state}, control={self.control}, artifacts={artifacts_str})"
-    
+
+
     def create_agent_states(self, agents):
         """
-            Ensure that the context has state entries for all agents, initializing with their default state if not already present. This should be called at the start of a conversation or when new agents are introduced, to ensure that all agents have a place to store their state in the context. It does not overwrite existing state entries, allowing for persistence across turns.
+            Ensure that the context has state entries for all agents, initializing with their default state if not already present.
+            This should be called at the start of a conversation or when new agents are introduced, to ensure that all agents have
+            a place to store their state in the context. It does not overwrite existing state entries, allowing for persistence across turns.
         """
         for agent in agents:
             self.state.data.setdefault(
@@ -289,6 +456,33 @@ class Context(BaseModel):
         # For compactness, display artifacts as a dict of id -> model_dump() inside a panel
         artifacts_dump = {k: v.model_dump() for k, v in self.artifacts.items()}
         console.print(Panel.fit(Pretty(artifacts_dump), title="Artifacts", border_style="green"))
+
+
+class ActivityContext(BaseModel):
+    """Complete learner state passed from one ordered activity to the next.
+
+    Activity ``n`` is derived only from the context of activity ``n - 1``.
+    Entry-test processing replaces knowledge for tested targets and carries
+    belief and supervisor state forward unchanged.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+    )
+
+    knowledge: StudentKnowledgeProgress
+    belief: StudentBelief
+    supervisor: SupervisorState
+
+    @classmethod
+    def neutral(cls) -> "ActivityContext":
+        """Create the explicit state preceding the first ordered activity."""
+        return cls(
+            knowledge=StudentKnowledgeProgress(root={}),
+            belief=StudentBelief(),
+            supervisor=SupervisorState.prior(),
+        )
 
 
 # -------------------------------------------------------------------

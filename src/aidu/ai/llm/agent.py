@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import inspect
 import re
+from typing import Any
 
 from abc import ABC, abstractmethod
 from uuid import uuid4
@@ -16,7 +17,8 @@ from pydantic import BaseModel, Field
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.artifacts import Artifact, EndArtifact, SymbolicArtifact, TextArtifact
-from aidu.ai.core.context import Context, Message, Trace
+from aidu.ai.core.config import AskConfig
+from aidu.ai.core.context import Context, Message, Messages
 from aidu.ai.core.recommendation import Recommendation
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,16 @@ class Agent(ABC):
         return self.__class__.__name__
 
     @abstractmethod
-    def run(self, artifact, context=None, agents: list[Agent] | None = None, ask_params=None) -> tuple[AgentResult, Context]:
+    def run(
+        self,
+        artifact,
+        context=None,
+        agents: list[Agent] | None = None,
+        *,
+        ask_params: dict[str, Any] | None = None,
+        ask_config: AskConfig | None = None,
+    ) -> tuple[AgentResult, Context]:
+        """Run one artifact with optional prompt parameters and LLM configuration."""
         pass
 
     def validate_target_continuations_against_agents(self, agents: list | None = None):
@@ -369,17 +380,13 @@ class BeginAgent(WorkflowAgent):
     @classmethod
     def _trace_message_rows(
         cls,
-        messages: list[Message],
+        messages: Messages,
         max_content_length: int = 100,
     ) -> list[tuple[int, str, str, bool]]:
         rows = []
         for index, message in enumerate(messages):
-            if isinstance(message, dict):
-                role = str(message.get("role", "?"))
-                content = cls._message_preview_content(message)
-            else:
-                role = "?"
-                content = message
+            role = str(message.get("role", "?"))
+            content = cls._message_preview_content(message)
 
             content_text = cls._content_to_text(content)
             rows.append(

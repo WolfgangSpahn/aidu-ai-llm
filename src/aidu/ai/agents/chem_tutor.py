@@ -53,7 +53,7 @@ class ChemTutor(WorkflowAgent, LLMFcRequester):
         
         and the students progress: 
                                       
-        {student_progress}. 
+        {student_knowledge_progress}.
                                       
         Here our current belief of the student's internal state and misconceptions: 
                                       
