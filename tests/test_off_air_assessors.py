@@ -6,7 +6,7 @@ from aidu.ai.agents.student_belief_assessor import StudentBeliefAssessor
 from aidu.ai.core.artifacts import TextArtifact
 from aidu.ai.core.belief import StudentBelief, StudentBeliefAssessment
 from aidu.ai.core.context import Context
-from aidu.ai.core.supervisor import SupervisorState
+from aidu.ai.core.supervisor import SUPERVISOR_DIMENSIONS, SupervisorState
 from aidu.ai.llm.agent import EndAgent
 
 
@@ -35,7 +35,7 @@ def test_learning_target_assessor_emits_valid_off_air_test_output():
         context,
     )
 
-    assert assessment == {"e": [], "review": True}
+    assert assessment == {"evidence": [], "review": True}
 
 
 def test_student_belief_assessor_preserves_prior_belief_off_air():
@@ -62,5 +62,6 @@ def test_ai_supervisor_emits_valid_neutral_off_air_test_output():
     )
 
     parsed = SupervisorState.model_validate(assessment)
-    assert all(result.fit == 0.5 for result in parsed.__dict__.values())
-    assert all("off-air test result" in result.reason for result in parsed.__dict__.values())
+    results = [getattr(parsed, dimension) for dimension in SUPERVISOR_DIMENSIONS]
+    assert all(result.fit == 0.5 for result in results)
+    assert all("off-air test result" in result.reason for result in results)

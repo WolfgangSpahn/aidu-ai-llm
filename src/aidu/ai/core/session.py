@@ -71,9 +71,15 @@ class SessionContext(BaseModel):
         return StudentKnowledgeProgress(
             root={
                 target["id"]: EvidenceKnowledgeProgress(
-                    mastery=0.0,
+                    mastery=0.5,
                     positive_evidence=0.0,
-                    negative_evidence=4.0,
+                    negative_evidence=0.0,
+                    entry_prior=0.5,
+                    entry_weight=0.0,
+                    source_count=0,
+                    turn_assessment_count=0,
+                    last_updated_turn=None,
+                    evidence_fingerprints=[],
                 )
                 for target in self.domain_targets
                 if target["id"] not in metadata_keys

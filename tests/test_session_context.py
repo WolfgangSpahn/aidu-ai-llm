@@ -45,5 +45,6 @@ def test_session_context_initializes_teacher_target_progress():
     progress = context.initial_student_knowledge_progress()
 
     assert set(progress.root) == {"target-1"}
-    assert progress.root["target-1"].mastery == 0.0
-    assert progress.root["target-1"].negative_evidence == 4.0
+    assert progress.root["target-1"].mastery == 0.5
+    assert progress.root["target-1"].entry_weight == 0.0
+    assert progress.root["target-1"].negative_evidence == 0.0

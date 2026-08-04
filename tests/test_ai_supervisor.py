@@ -3,6 +3,7 @@ from aidu.ai.agents.ai_supervisor import AiSupervisor
 
 def test_ai_supervisor_assesses_tutor_response_against_learning_context():
     prompt = AiSupervisor.prompt_template
+    prompt_flat = " ".join(prompt.split())
 
     for dimension in (
         "factual_fit",
@@ -25,4 +26,10 @@ def test_ai_supervisor_assesses_tutor_response_against_learning_context():
     assert "Do not require one message to complete the lesson" in prompt
     assert "one manageable applet action followed" in prompt
     assert "Do not lower it for pedagogical omissions" in prompt
+    assert "It occurred AFTER LAST_TUTOR_MESSAGE" in prompt
+    assert "every tutor action, claim, question, and topic" in prompt_flat
+    assert "Do not lower the score merely because other targets" in prompt_flat
+    assert "Relational or orienting support can be the correct immediate scaffold" in prompt_flat
+    assert "{assessed_tutor_turn_index}" in prompt
+    assert "{outcome_student_turn_index}" in prompt
     assert "suggested_action" not in prompt

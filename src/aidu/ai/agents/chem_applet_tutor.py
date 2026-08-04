@@ -196,6 +196,7 @@ class AppletRuleResponder(WorkflowAgent):
                 student_goal=context.state.data.get("StudentGoal"),
                 info_store=current_info_store,
                 last_info_store=previous_info_store,
+                turn_index=context.state.data["TurnIndex"],
             )
         feedback = build_deterministic_applet_feedback(applet_content, analysis=analysis, analyze=False)
         response = TextArtifact(
@@ -247,23 +248,23 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
 
         ## Tutoring context
 
-        Active context:
-        {context_summary}
+        Active tutoring context: {context_summary}
 
         Domain:
 
-        * subject: {subject_label} ({subject_id})
-        * domain: {domain_label} ({domain_id})
-        * description: {domain_description}
-        * learning targets: {learning_targets}
+        - subject: {subject_label} ({subject_id})
+        - title: {domain_label}
+        - domain id: {domain_id}
+        - description: {domain_description}
+        - learning targets: {learning_targets}
 
         Applet:
 
-        * id: {applet_id}
-        * name: {applet_name}
-        * description: {applet_description}
-        * remote-control contract: {applet_remote_control}
-        * info-store schema: {applet_info_store_schema}
+        - id: {applet_id}
+        - name: {applet_name}
+        - description: {applet_description}
+        - remote-control contract: {applet_remote_control}
+        - info-store schema: {applet_info_store_schema}
 
         Applet-specific guidance:
         {applet_tutor_instructions}
@@ -276,6 +277,17 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
 
         Student progress:
         {student_knowledge_progress}
+
+        Use student progress as a conservative planning prior:
+
+        * Start with a concrete, low-barrier investigation when relevant target
+          evidence is absent, neutral, negative, or entry-test-only.
+        * A high entry-test-only estimate is a hypothesis to verify, not
+          permission to skip foundations or begin with an abstract question.
+        * Increase complexity only after the learner demonstrates the relevant
+          relationship in the dialog or applet activity.
+        * Do not tell the learner their hidden estimate or describe them as
+          weak, low-performing, or unprepared.
 
         Current learner model:
         {student_belief}
@@ -303,6 +315,17 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         hearing why the activity may matter. Do not assign another task in that
         response.
 
+        When the student says they cannot perform, place, move, find, or see
+        something in the applet, treat that as an orienting need and stop lesson
+        progression for that turn. Explain the one relevant interaction or
+        placement rule using the applet-specific guidance and current state,
+        then give one concrete troubleshooting step. Do not continue the pending
+        conceptual question until the learner can perform or locate the action.
+        If the current state suggests the action actually occurred, acknowledge
+        the discrepancy without contradicting the learner: say where the object
+        appears or what state value changed, explain the placement rule, and ask
+        them to check that location. Never respond only with “you already did it.”
+
         When the student is ready for conceptual or investigative work:
 
         1. Infer what the student currently understands from their latest response, the dialog, and the applet state.
@@ -310,6 +333,30 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         3. Choose a meaningful investigation that lets the student explore that connection.
         4. Prefer reasoning from visible evidence over recalling isolated facts.
         5. Move to a broader relationship or consequence once the student has demonstrated the current idea.
+
+        Treat teacher targets as both the intended learning outcome and the
+        priority for selecting available applet evidence. If a target names a
+        visible representation or notation and the current applet state
+        provides it, refer to that representation explicitly, help the learner
+        interpret one visible feature, and connect changes in it to the target.
+        Never invent a representation or infer unavailable visual details.
+
+        Use only interface control names and locations declared by the applet
+        guidance or current state. If the learner cannot find a value or
+        control and its location is not declared, ask what labels or controls
+        they can see instead of inventing a card, panel, button, or position.
+
+        Before praising an answer, separate its correct and incorrect or
+        ambiguous parts. Preserve the valid reasoning, but briefly clarify
+        notation or terminology that conflicts with the applet state. Do not
+        say “exactly right” to a partially correct statement.
+
+        Check state fields that indicate completeness, stability, remaining
+        capacity, or an unfinished fragment before calling a result complete or
+        stable. Describe the applet's classification as evidence from its model;
+        avoid presenting simplified thresholds or categories as universal laws.
+        Prefer qualified language over absolute claims such as “the only way,”
+        “always,” or “completely” unless the target and current evidence justify it.
 
         Use a progression such as:
 
@@ -389,6 +436,9 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
 
         Avoid questions whose answer is merely copied from a visible label.
 
+        Keep every response complete and self-contained. End every explanatory
+        sentence before asking at most one focused next question.
+
         If the student says “With one electron I see He+,” do not ask what the new charge is. Accept that observation and move to a broader comparison, prediction, or explanation.
 
         ## Ending the dialog
@@ -447,7 +497,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
             context,
             ask_params=state,
             ask_config=AskConfig(
-                max_tokens=256,
+                max_tokens=512,
                 vendor_config={
                     "reasoning": {"effort": "low"},
                     "verbosity": "low",

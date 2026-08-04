@@ -8,11 +8,12 @@ import os
 import logging
 import json
 import textwrap
-from typing import Any
+from typing import Any, Literal
 from pprint import pformat
 from dotenv import load_dotenv
 
 from rich.console import Console
+from pydantic import BaseModel, ConfigDict, Field
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.config import AskConfig
@@ -29,6 +30,42 @@ from aidu.ai.agents.assessment_context import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class TargetEvidenceAssessment(BaseModel):
+    """Strict LLM contract for one target-specific learner observation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(min_length=1)
+    direction: Literal["positive", "negative"]
+    strength: Literal["weak", "moderate", "strong"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_type: Literal[
+        "recall",
+        "explanation",
+        "application",
+        "correction",
+        "guess",
+        "hinted_response",
+    ]
+    support_level: Literal[
+        "independent",
+        "small_prompt",
+        "guided",
+        "explicit_hint",
+        "answer_revealed",
+    ]
+    quote: str = Field(min_length=1)
+
+
+class LearningTargetAssessment(BaseModel):
+    """Complete strict response from the learning-target assessor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence: list[TargetEvidenceAssessment] = Field(max_length=2)
+    review: bool
 
 
 def pretty_content(content: str):
@@ -48,13 +85,17 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         LAST_MESSAGE, HISTORY, and ACTIVITY_STATE provide context for interpreting
         short or referential answers, but they are not learner evidence themselves.
 
-        q rule:
-        q must be an exact substring of CURRENT_MESSAGE.
+        quote rule:
+        quote must be an exact substring of CURRENT_MESSAGE.
         Never quote the tutor, history, activity state, target text, or your own inference.
-        Use q:null if no exact quote exists.
+        Omit an evidence item if no exact learner quote exists.
 
         Output:
-        {{"e":[{{"i":"indicator","p":"+|-|?","s":"w|m|s","q":"quote-or-null"}}],"review":false}}
+        {{"evidence":[{{"target":"target-id","direction":"positive|negative",
+        "strength":"weak|moderate|strong","confidence":0.0,
+        "evidence_type":"recall|explanation|application|correction|guess|hinted_response",
+        "support_level":"independent|small_prompt|guided|explicit_hint|answer_revealed",
+        "quote":"exact learner quote"}}],"review":false}}
 
         Rules:
         - Max 2 evidence items.
@@ -65,14 +106,53 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - Omit targets with no direct learner evidence.
         - Do not reward information supplied only by the tutor, history, or activity.
         - A short answer may be evidence when LAST_MESSAGE makes its meaning clear.
-        - Use p:? when context is insufficient to decide whether the answer supports
-          or contradicts the target.
+        - Omit evidence when context is insufficient to decide whether the answer
+          supports or contradicts the target.
+        - Prefer no evidence over speculative evidence. A learner's successful
+          action, compliance with an instruction, or report of what the applet
+          displays does not by itself demonstrate the underlying concept.
+        - ACTIVITY_STATE may disambiguate what the learner is referring to, but
+          it must never add knowledge, reasoning, or particle identification that
+          the learner did not express in CURRENT_MESSAGE.
+        - A displayed value, name, symbol, or charge copied by the learner is at
+          most weak evidence for a target that explicitly requires identifying or
+          reading that displayed item. It is not evidence that the learner can
+          explain the causal relationship, interpret a broader notation system,
+          or calculate related quantities.
+        - Evidence for a relationship target requires the learner to state,
+          predict, compare, or apply that relationship. Merely observing the
+          result after the tutor requested an applet action is not enough.
+        - A learner's explicit causal calculation or comparison is conceptual
+          application evidence for every target whose teacher-defined wording
+          it directly satisfies, even when the learner does not use the target's
+          preferred technical vocabulary. Do not reduce such reasoning to a
+          copied applet value merely because displayed numbers are mentioned.
+        - A failed applet attempt can be negative application evidence only when
+          the failure itself directly demonstrates knowledge described by the
+          target. Interface operation, dragging, placement, visibility, or motor
+          difficulty alone is not evidence against a conceptual target. For
+          example, "I cannot add an electron" does not contradict understanding
+          of how electron number affects charge. Omit evidence unless the learner
+          also states an incorrect relationship, prediction, identification, or
+          interpretation. Never invent an explanation for why the attempt failed.
+        - When CURRENT_MESSAGE and ACTIVITY_STATE conflict about whether an
+          applet action succeeded, do not reward the claimed action as positive
+          evidence. Apply the conceptual-evidence boundary above; otherwise omit.
+        - An uncertainty response such as "I don't know" is negative evidence
+          only for the specific target directly tested by LAST_MESSAGE. Do not
+          attach it to another target mentioned in HISTORY or ACTIVITY_STATE.
+        - If LAST_MESSAGE revealed the answer, do not treat repetition or
+          paraphrase as independent knowledge. Use support_level "answer_revealed"
+          and no more than weak strength, or omit it when no knowledge beyond the
+          revealed answer is demonstrated.
+        - confidence measures confidence in this assessment, from 0.0 to 1.0.
+        - support_level describes how much help preceded the demonstrated response.
+        - evidence_type describes what the learner actually demonstrated.
 
-        p: +=understands, -=wrong, ?=unclear.
         Strength:
-        - w: a copied value, isolated observation, or brief recognition without a relationship.
-        - m: a correct relationship, prediction, comparison, or explanation in the current case.
-        - s: a general rule stated in the learner's own words, a justified explanation,
+        - weak: a copied value, isolated observation, or brief recognition without a relationship.
+        - moderate: a correct relationship, prediction, comparison, or explanation in the current case.
+        - strong: a general rule stated in the learner's own words, a justified explanation,
           or correct transfer of a relationship to a new case.
         Concise wording, spelling mistakes, and imperfect grammar do not reduce strength
         when the conceptual relationship is clear.
@@ -125,7 +205,7 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
     ) -> tuple[AgentResult, Context]:
         """Assess with the live model, or emit contract-valid off-air test data."""
         if not context.on_air:
-            assessment = {"e": [], "review": True}
+            assessment = {"evidence": [], "review": True}
             result = self.result(
                 artifacts=[
                     TextArtifact(

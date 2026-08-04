@@ -8,6 +8,7 @@ from aidu.ai.core.knowledge_progress import (
     StudentKnowledgeProgress,
 )
 from aidu.ai.core.supervisor import SupervisorState
+from aidu.support.scoring import initialize_from_entry_prior
 
 
 def test_neutral_activity_context_has_all_three_state_elements():
@@ -48,10 +49,8 @@ def test_entry_test_populates_next_context_without_mutating_previous():
     previous = ActivityContext.neutral()
     previous.knowledge = StudentKnowledgeProgress(
         root={
-            "untested": EvidenceKnowledgeProgress(
-                mastery=0.7,
-                positive_evidence=2.0,
-                negative_evidence=1.0,
+            "untested": EvidenceKnowledgeProgress.from_evidence_state(
+                initialize_from_entry_prior(prior=0.7, question_count=1)
             )
         }
     )
@@ -74,9 +73,10 @@ def test_entry_test_populates_next_context_without_mutating_previous():
 
     assert current is not previous
     assert set(current.knowledge.root) == {"untested", "tested"}
-    assert current.knowledge.root["tested"].mastery == pytest.approx(0.7)
-    assert current.knowledge.root["tested"].positive_evidence == pytest.approx(0.7)
-    assert current.knowledge.root["tested"].negative_evidence == pytest.approx(0.3)
+    assert current.knowledge.root["tested"].mastery == 1.0
+    assert current.knowledge.root["tested"].positive_evidence == pytest.approx(0.75)
+    assert current.knowledge.root["tested"].negative_evidence == 0.0
+    assert current.knowledge.root["untested"].mastery == 1.0
     assert previous.knowledge.root.get("tested") is None
     assert current.belief == previous.belief
     assert current.supervisor == previous.supervisor

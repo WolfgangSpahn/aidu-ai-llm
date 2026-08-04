@@ -133,6 +133,14 @@ class Messages(RootModel[list[dict[str, Any]]]):
                 return StudentBelief.model_validate(state)
         return StudentBelief()
 
+    def latest_supervisor(self) -> SupervisorState:
+        """Return the newest persisted supervisor snapshot, or its prior."""
+        for message in reversed(self.root):
+            state = message.get("backend_supervision_state")
+            if state is not None:
+                return SupervisorState.model_validate(state)
+        return SupervisorState.prior()
+
     def before_last(self) -> "Messages":
         """Return all records preceding the current turn."""
         return Messages(root=self.root[:-1])

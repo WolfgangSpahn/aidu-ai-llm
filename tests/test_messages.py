@@ -6,10 +6,15 @@ def test_messages_returns_latest_persisted_learner_states():
         [
             {
                 "backend_knowledge_progress_state": {
-                    "target-1": {
-                        "mastery": 1.4,
-                        "positive_evidence": 2.0,
-                        "negative_evidence": 0.0,
+                        "target-1": {
+                            "mastery": 1.0,
+                            "positive_evidence": 2.0,
+                            "negative_evidence": 0.0,
+                            "entry_prior": 0.8,
+                            "entry_weight": 0.75,
+                            "source_count": 2,
+                            "turn_assessment_count": 1,
+                            "last_updated_turn": 3,
                     }
                 },
                 "backend_belief_state": {

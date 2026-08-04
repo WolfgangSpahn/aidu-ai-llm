@@ -57,8 +57,22 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
           perfect or complete lesson.
         - Treat CURRENT_STUDENT_MESSAGE as outcome evidence: it may show whether
           the preceding tutor intervention was understandable and productive.
+          It occurred AFTER LAST_TUTOR_MESSAGE. Never criticize the tutor for
+          failing to acknowledge, answer, or react to information that appears
+          for the first time in CURRENT_STUDENT_MESSAGE. Describe such evidence
+          as an outcome (for example, "the outcome shows the instruction was
+          unclear"), not as context the tutor already possessed.
+          When OUTCOME_EVIDENCE_AVAILABLE is false, no later learner turn
+          exists: assess the tutor response intrinsically and do not penalize
+          it for missing outcome evidence.
         - Give one concise reason for each fit score so a human reviewer can
           understand the signal later.
+        - Every reason must evaluate only LAST_TUTOR_MESSAGE. HISTORY is context,
+          not an alternative tutor turn. Before returning JSON, verify that every
+          tutor action, claim, question, and topic named in a reason is actually
+          present in LAST_TUTOR_MESSAGE or is a direct characterization of it.
+          If a reason discusses a different question or later topic, discard it
+          and reassess LAST_TUTOR_MESSAGE from scratch.
         - Assess what happened; do not propose revisions or future actions.
         - Do not discuss prompt fields, message selection, duplicated context,
           missing metadata, or how the supervisor input was assembled.
@@ -66,6 +80,7 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
           APPLET_STATE_AT_TUTOR_TURN. Do not lower it for pedagogical omissions.
         - goal_alignment: score whether this turn advances at least one relevant
           teacher target. It need not name the target or cover all targets.
+          Do not lower the score merely because other targets are not addressed.
         - knowledge_alignment: score whether the turn is manageable from the
           demonstrated target progress. Zero or absent mastery means novice;
           one concrete observable action is often appropriate.
@@ -76,6 +91,9 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
           For an initial discovery turn, one manageable applet action followed
           by an observation question is valid scaffolding; the tutor need not
           explain or interpret the result before the student investigates it.
+          Relational or orienting support can be the correct immediate scaffold
+          when the learner expresses confusion, reluctance, or interface trouble;
+          it need not advance chemistry content in the same message.
 
         TEACHER_TARGETS:
         {teacher_targets}
@@ -92,8 +110,17 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         CURRENT_STUDENT_MESSAGE:
         {current_student_message}
 
+        OUTCOME_EVIDENCE_AVAILABLE:
+        {outcome_evidence_available}
+
         LAST_TUTOR_MESSAGE:
         {last_tutor_message}
+
+        ASSESSED_TUTOR_TURN_INDEX:
+        {assessed_tutor_turn_index}
+
+        OUTCOME_STUDENT_TURN_INDEX:
+        {outcome_student_turn_index}
 
         APPLET_STATE_AT_TUTOR_TURN:
         {applet_state_at_tutor_turn}
@@ -107,6 +134,7 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         *,
         context: Context,
         current_student_message: str,
+        outcome_evidence_available: bool = True,
     ) -> dict[str, Any]:
         """Build supervision values for the preceding tutor intervention."""
         belief: StudentBelief = context.state.data["StudentBelief"]
@@ -119,7 +147,17 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
             "student_belief": belief.model_dump_json(),
             "history": dialog_history(context),
             "current_student_message": current_student_message,
+            "outcome_evidence_available": json.dumps(outcome_evidence_available),
             "last_tutor_message": last_tutor_message(context),
+            "assessed_tutor_turn_index": json.dumps(
+                context.state.data.get("LastTutorTurnIndex")
+            ),
+            "outcome_student_turn_index": json.dumps(
+                context.state.data.get(
+                    "OutcomeStudentTurnIndex",
+                    max(0, context.state.data.get("TurnIndex", 1) - 1),
+                ) if outcome_evidence_available else None
+            ),
             "applet_state_at_tutor_turn": tutor_activity_state(context),
         }
 

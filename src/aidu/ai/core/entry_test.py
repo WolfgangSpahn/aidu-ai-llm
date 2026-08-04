@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from aidu.support.scoring import EntryTestScore, score_poll_test
+from aidu.support.scoring import (
+    EntryTestScore,
+    initialize_from_entry_prior,
+    score_poll_test,
+)
 
 from .context import ActivityContext
 from .knowledge_progress import (
@@ -20,9 +24,11 @@ def populate_activity_context(
 ) -> ActivityContext:
     """Build ``ActivityContext(n)`` from ``ActivityContext(n-1)`` and a score.
 
-    Only targets for which the submitted test produced evidence are replaced.
-    Untested knowledge and the other two context elements are inherited.  The
-    input context is never mutated.
+    The understandable whole-test score becomes the conservative prior for all
+    configured targets. Target annotations determine evidence breadth and are
+    retained for diagnostics, but cannot inflate initial mastery above the
+    score shown to the learner and teacher. The other two context elements are
+    inherited, and the input context is never mutated.
 
     ``question_count`` is used as evidence mass because several option
     observations from one question are correlated.  This follows the scoring
@@ -31,12 +37,27 @@ def populate_activity_context(
     """
 
     knowledge = dict(previous.knowledge.root)
+    if not score.priors:
+        return ActivityContext(
+            knowledge=StudentKnowledgeProgress(root=knowledge),
+            belief=previous.belief.model_copy(deep=True),
+            supervisor=previous.supervisor.model_copy(deep=True),
+        )
+    for target in knowledge:
+        if target in score.priors:
+            continue
+        knowledge[target] = EvidenceKnowledgeProgress.from_evidence_state(
+            initialize_from_entry_prior(
+                prior=score.overall_score,
+                question_count=1,
+            )
+        )
     for target, prior in score.priors.items():
-        evidence_mass = float(prior.question_count)
-        knowledge[target] = EvidenceKnowledgeProgress(
-            mastery=prior.prior,
-            positive_evidence=prior.prior * evidence_mass,
-            negative_evidence=(1.0 - prior.prior) * evidence_mass,
+        knowledge[target] = EvidenceKnowledgeProgress.from_evidence_state(
+            initialize_from_entry_prior(
+                prior=prior.prior,
+                question_count=prior.question_count,
+            )
         )
 
     return ActivityContext(

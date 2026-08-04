@@ -47,7 +47,10 @@ class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
         - Return all eight dimensions.
         - Estimate observable state, not subject-matter mastery.
         - Do not infer emotion from correctness alone.
-        - Change values conservatively from PRIOR_BELIEF.
+        - Change values conservatively from PRIOR_BELIEF. A single short answer,
+          correct response, or successful action cannot establish an extreme
+          persistent state. Normally change a dimension by no more than 0.15;
+          repeated evidence across turns is required to approach 0 or 1.
         - Engagement: active participation and sustained effort.
         - Confidence: certainty expressed in the learner's own response.
         - Confusion: difficulty understanding or choosing a next step.

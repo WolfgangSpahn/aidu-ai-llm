@@ -5,7 +5,11 @@ from aidu.ai.core.supervisor import SUPERVISOR_DIMENSIONS, SupervisorState
 
 
 def test_supervisor_dimensions_are_defined_by_the_core_state():
-    assert SUPERVISOR_DIMENSIONS == frozenset(SupervisorState.model_fields)
+    assert SUPERVISOR_DIMENSIONS == frozenset({
+        "factual_fit", "goal_alignment", "knowledge_alignment",
+        "belief_alignment", "scaffolding_fit",
+    })
+    assert SUPERVISOR_DIMENSIONS < frozenset(SupervisorState.model_fields)
 
 
 def test_supervisor_prior_is_complete_and_neutral():

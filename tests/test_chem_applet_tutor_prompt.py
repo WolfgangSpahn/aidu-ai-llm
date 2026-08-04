@@ -59,6 +59,15 @@ def test_chem_applet_tutor_responds_to_meaning_before_applet_state():
     assert "never let it override the student's immediate relational" in prompt
 
 
+def test_chem_applet_tutor_troubleshoots_applet_placement_before_progressing():
+    prompt = " ".join(ChemLlmTutor.prompt_template.split())
+
+    assert "treat that as an orienting need and stop lesson progression" in prompt
+    assert "give one concrete troubleshooting step" in prompt
+    assert "Do not continue the pending conceptual question" in prompt
+    assert "Never respond only with “you already did it.”" in prompt
+
+
 def test_chem_applet_tutor_uses_discovery_when_student_is_ready():
     prompt = ChemLlmTutor.prompt_template
 

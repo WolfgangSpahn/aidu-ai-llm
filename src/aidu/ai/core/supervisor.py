@@ -21,6 +21,9 @@ class SupervisorState(BaseModel):
     knowledge_alignment: SupervisorResult
     belief_alignment: SupervisorResult
     scaffolding_fit: SupervisorResult
+    assessed_tutor_turn_index: int | None = Field(default=None, ge=0)
+    outcome_student_turn_index: int | None = Field(default=None, ge=0)
+    outcome_evidence_available: bool = True
 
     @classmethod
     def prior(cls) -> "SupervisorState":
@@ -30,8 +33,17 @@ class SupervisorState(BaseModel):
                 "fit": 0.5,
                 "reason": "No tutor response has been assessed yet.",
             }
-            for dimension in cls.model_fields
+            for dimension in (
+                "factual_fit", "goal_alignment", "knowledge_alignment",
+                "belief_alignment", "scaffolding_fit",
+            )
         })
 
 
-SUPERVISOR_DIMENSIONS = frozenset(SupervisorState.model_fields)
+SUPERVISOR_DIMENSIONS = frozenset({
+    "factual_fit",
+    "goal_alignment",
+    "knowledge_alignment",
+    "belief_alignment",
+    "scaffolding_fit",
+})
