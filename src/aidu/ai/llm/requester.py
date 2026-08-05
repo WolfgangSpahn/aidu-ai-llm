@@ -31,7 +31,7 @@ from rich.rule import Rule
 
 from aidu.ai.core.artifacts import TextArtifact
 from aidu.ai.core.recommendation import Recommendation
-from aidu.ai.core.context import Context, Trace, Message
+from aidu.ai.core.context import Context, Trace, Message, PersistedTurn
 from aidu.ai.core.config import AskConfig
 from .client import clean_message
 from .clients.openai import OpenAIClient
@@ -187,7 +187,7 @@ class LLMRequester:
         return context
 
     @staticmethod
-    def _message_as_dict(message: Message | dict[str, Any]) -> dict[str, Any]:
+    def _message_as_dict(message: PersistedTurn | Message | dict[str, Any]) -> dict[str, Any]:
         if isinstance(message, dict):
             return message
         if hasattr(message, "model_dump"):

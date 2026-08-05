@@ -4,7 +4,7 @@
 # If you use this software in academic work, citation of the original author is requested.
 # src/aidu/ai/core/__init__.py
 
-from aidu.ai.core.context import ActivityContext, Context, Trace, State, Control, Message, Messages
+from aidu.ai.core.context import ActivityContext, Context, Trace, State, Control, Message, Messages, PersistedTurn
 from aidu.ai.core.entry_test import populate_activity_context, process_entry_test
 from aidu.ai.core.config import AskConfig
 from aidu.ai.core.protocols import ClientProtocol, ChatAgentProtocol
@@ -29,6 +29,7 @@ __all__ = [
     "Control",
     "Message",
     "Messages",
+    "PersistedTurn",
     "AskConfig",
     "ClientProtocol",
     "ChatAgentProtocol",

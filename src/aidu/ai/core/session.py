@@ -132,30 +132,6 @@ class SessionResponse(BaseModel):
     message: Message
     info: SessionInfo
 
-    def to_director_payload(self) -> dict[str, Any]:
-        """
-        Transitional compatibility payload.
-
-        This flattens the clean core message and the session envelope into the
-        old dict shape:
-
-            role
-            content
-            actor
-            kind
-            session_id
-            session_context
-            applet_input
-            messages
-
-        Keep this only while Director/Actor code still expects session data
-        inside the incoming message object.
-        """
-        return {
-            **self.message.model_dump(exclude_none=True),
-            **self.info.model_dump(exclude_none=True),
-        }
-
 
 class RoutedMessage(BaseModel):
     """

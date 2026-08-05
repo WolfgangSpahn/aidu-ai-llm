@@ -10,7 +10,7 @@ MAX_HISTORY_TURNS = 10
 def dialog_history(context: Context) -> str:
     """Serialize recent validated dialog messages for an assessment prompt."""
     return json.dumps(
-        context.trace.messages[-MAX_HISTORY_TURNS:],
+        [turn.to_dict() for turn in context.trace.messages[-MAX_HISTORY_TURNS:]],
         ensure_ascii=False,
     )
 
@@ -19,9 +19,9 @@ def last_tutor_message(context: Context) -> str:
     """Return the most recent assistant message in the validated dialog trace."""
     return next(
         (
-            f"Tutor: {message['content']}"
+            f"Tutor: {message.content}"
             for message in reversed(context.trace.messages[-MAX_HISTORY_TURNS:])
-            if message["role"] == "assistant"
+            if message.role == "assistant"
         ),
         "No previous tutor turn.",
     )

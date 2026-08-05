@@ -48,14 +48,14 @@ def test_ask_prepends_system_prompt_for_llm_without_mutating_dialog_trace():
     assert response["content"] == "ok"
     assert next_context is context
     assert context.trace.messages[0]["role"] == "assistant"
-    assert client.messages[0] == {
+    assert client.messages[0].to_dict() == {
         "role": "system",
         "content": "System prompt for chemistry.",
     }
-    assert client.messages[1:] == [
-        *context.trace.messages,
-        {"role": "user", "content": "Why is hydrogen a gas?"},
+    assert [turn.to_dict() for turn in client.messages[1:-1]] == [
+        turn.to_dict() for turn in context.trace.messages
     ]
+    assert client.messages[-1] == {"role": "user", "content": "Why is hydrogen a gas?"}
 
 
 def test_ask_drops_duplicate_current_message_from_effective_llm_history():
@@ -77,7 +77,7 @@ def test_ask_drops_duplicate_current_message_from_effective_llm_history():
 
     requester.ask({"role": "user", "content": "Why is hydrogen a gas?"}, context)
 
-    assert client.messages == [
+    assert [message.to_dict() if hasattr(message, "to_dict") else message for message in client.messages] == [
         {
             "role": "system",
             "content": "System prompt.",
@@ -108,7 +108,7 @@ def test_ask_accepts_message_model_for_duplicate_detection_and_client_call():
 
     requester.ask(Message(role="user", content="Applet event: applet-build-an-atom"), context)
 
-    assert client.messages == [
+    assert [message.to_dict() if hasattr(message, "to_dict") else message for message in client.messages] == [
         {
             "role": "system",
             "content": "System prompt.",

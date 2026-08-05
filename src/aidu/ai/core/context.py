@@ -17,7 +17,7 @@ from rich import box
 from collections.abc import Iterator
 from typing import Any, overload
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer
 
 from .artifacts import Artifact, TextArtifact
 from .applet_info import AppletInfo
@@ -75,19 +75,76 @@ class Message(BaseModel):
     def values(self):
         return self.to_dict().values()
 
-    @staticmethod
-    def clean_dialog_record(
-        message: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Normalize one persisted record for LLM dialog history."""
-        role = message.get("role")
+class PersistedTurn(BaseModel):
+    """Canonical validated representation of one stored conversation turn.
+
+    ``Message`` represents live conversational content. A persisted turn adds
+    only the stable metadata required by history, applet, accounting, and
+    learner-state consumers. Dictionaries from storage are normalized into
+    this model once, when ``Messages`` is validated.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+    )
+
+    role: str
+    content: str | dict[str, Any] | list[Any] | None = None
+    actor: str | None = None
+    avatar: str | None = None
+    kind: str | None = None
+    applet_input: dict[str, Any] | None = None
+    function_call: dict[str, Any] | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    duration: float | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cost_usd: float | None = None
+    model: str | None = None
+    timestamp: float | None = None
+    backend_belief_state: StudentBelief | None = None
+    backend_knowledge_progress_state: StudentKnowledgeProgress | None = None
+    backend_knowledge_state_kind: str | None = None
+    backend_assessed_student_turn_index: int | None = Field(default=None, ge=0)
+    backend_supervision_state: SupervisorState | None = None
+
+    @classmethod
+    def from_message(cls, message: Message) -> "PersistedTurn":
+        """Create a persisted turn from validated live message content."""
+        return cls.model_validate(message.model_dump(exclude_none=True))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize at a transport or persistence boundary."""
+        serialized = self.model_dump(mode="json")
+        return {
+            key: value
+            for key, value in serialized.items()
+            if value is not None
+        }
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in type(self).model_fields:
+            raise KeyError(key)
+        value = getattr(self, key)
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def to_dialog_message(self) -> "PersistedTurn | None":
+        """Project a persisted turn to the stable fields used in LLM history."""
+        role = self.role
         if role not in {"user", "assistant"}:
             return None
 
-        applet_info = AppletInfo.from_message(message)
+        applet_info = AppletInfo.from_message(self)
         if applet_info:
             applet_state_text = applet_info.to_text()
-            student_text = str(message.get("content") or "").strip()
+            student_text = str(self.content or "").strip()
             content = (
                 f"{applet_state_text}\nStudent said: {student_text}"
                 if student_text
@@ -95,50 +152,51 @@ class Message(BaseModel):
                 else applet_state_text
             )
         else:
-            content = str(message.get("content") or "").strip()
+            content = str(self.content or "").strip()
 
         if not content:
             return None
 
-        cleaned: dict[str, Any] = {"role": role, "content": content}
-        applet_input = message.get("applet_input")
-        if message.get("kind") == "applet" and isinstance(applet_input, dict):
-            cleaned["kind"] = "applet"
-            cleaned["applet_input"] = applet_input
-        return cleaned
+        return PersistedTurn(
+            role=role,
+            content=content,
+            kind="applet" if self.kind == "applet" and self.applet_input else None,
+            applet_input=self.applet_input if self.kind == "applet" else None,
+        )
 
 
-class Messages(RootModel[list[dict[str, Any]]]):
-    """Conversation records plus access to the latest persisted learner state.
+class Messages(RootModel[list[PersistedTurn]]):
+    """Validated persisted conversation history."""
 
-    The root list preserves the API wire format. Each record may contain the
-    core message fields and backend-owned per-turn state snapshots.
-    """
+    root: list[PersistedTurn] = Field(default_factory=list)
 
-    root: list[dict[str, Any]] = Field(default_factory=list)
+    @model_serializer
+    def serialize_model(self) -> list[dict[str, Any]]:
+        """Emit the established compact JSON wire format at the boundary."""
+        return [turn.to_dict() for turn in self.root]
 
     def latest_knowledge_progress(self) -> StudentKnowledgeProgress:
         """Return the newest persisted knowledge snapshot, or an empty state."""
         for message in reversed(self.root):
-            state = message.get("backend_knowledge_progress_state")
+            state = message.backend_knowledge_progress_state
             if state is not None:
-                return StudentKnowledgeProgress.model_validate(state).clamped()
+                return state.clamped()
         return StudentKnowledgeProgress(root={})
 
     def latest_belief(self) -> StudentBelief:
         """Return the newest persisted student-belief snapshot, or its default."""
         for message in reversed(self.root):
-            state = message.get("backend_belief_state")
+            state = message.backend_belief_state
             if state is not None:
-                return StudentBelief.model_validate(state)
+                return state
         return StudentBelief()
 
     def latest_supervisor(self) -> SupervisorState:
         """Return the newest persisted supervisor snapshot, or its prior."""
         for message in reversed(self.root):
-            state = message.get("backend_supervision_state")
+            state = message.backend_supervision_state
             if state is not None:
-                return SupervisorState.model_validate(state)
+                return state
         return SupervisorState.prior()
 
     def before_last(self) -> "Messages":
@@ -155,7 +213,7 @@ class Messages(RootModel[list[dict[str, Any]]]):
             root=[
                 cleaned
                 for message in self.recent(limit)
-                if (cleaned := Message.clean_dialog_record(message))
+                if (cleaned := message.to_dialog_message())
             ]
         )
 
@@ -165,7 +223,7 @@ class Messages(RootModel[list[dict[str, Any]]]):
         if not cleaned:
             return " - No previous dialog turns are available."
         return "\n".join(
-            f" - {message['role']}: {message['content']}"
+            f" - {message.role}: {message.content}"
             for message in cleaned
         )
 
@@ -175,7 +233,7 @@ class Messages(RootModel[list[dict[str, Any]]]):
             (
                 index
                 for index in range(len(self.root) - 1, -1, -1)
-                if self.root[index].get("role") == "assistant"
+                if self.root[index].role == "assistant"
             ),
             None,
         )
@@ -188,47 +246,52 @@ class Messages(RootModel[list[dict[str, Any]]]):
                 return applet_info.to_state()
         return {}
 
-    def append(self, message: Message | dict[str, Any]) -> None:
-        """Append one core or backend-enriched message record."""
-        if isinstance(message, Message):
-            self.root.append(message.to_dict())
-            return
-        self.root.append(message)
+    def append(self, message: PersistedTurn | Message | dict[str, Any]) -> None:
+        """Validate and append one persisted conversation turn."""
+        if isinstance(message, PersistedTurn):
+            turn = message
+        elif isinstance(message, Message):
+            turn = PersistedTurn.from_message(message)
+        else:
+            turn = PersistedTurn.model_validate(message)
+        self.root.append(turn)
 
     def __len__(self) -> int:
         return len(self.root)
 
-    def __iter__(self) -> Iterator[dict[str, Any]]:
+    def __iter__(self) -> Iterator[PersistedTurn]:
         return iter(self.root)
 
     def __bool__(self) -> bool:
         return bool(self.root)
 
     @overload
-    def __getitem__(self, index: int) -> dict[str, Any]: ...
+    def __getitem__(self, index: int) -> PersistedTurn: ...
 
     @overload
-    def __getitem__(self, index: slice) -> list[dict[str, Any]]: ...
+    def __getitem__(self, index: slice) -> list[PersistedTurn]: ...
 
     def __getitem__(
         self, index: int | slice
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> PersistedTurn | list[PersistedTurn]:
         return self.root[index]
 
     def __setitem__(
-        self, index: int, message: Message | dict[str, Any]
+        self, index: int, message: PersistedTurn | Message | dict[str, Any]
     ) -> None:
-        self.root[index] = message.to_dict() if isinstance(message, Message) else message
+        if isinstance(message, PersistedTurn):
+            self.root[index] = message
+        elif isinstance(message, Message):
+            self.root[index] = PersistedTurn.from_message(message)
+        else:
+            self.root[index] = PersistedTurn.model_validate(message)
 
     def __add__(
-        self, other: list[Message | dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        return self.root + [
-            message.to_dict() if isinstance(message, Message) else message
-            for message in other
-        ]
+        self, other: list[PersistedTurn | Message | dict[str, Any]]
+    ) -> list[PersistedTurn]:
+        return self.root + Messages.model_validate(other).root
 
-    def __reversed__(self) -> Iterator[dict[str, Any]]:
+    def __reversed__(self) -> Iterator[PersistedTurn]:
         return reversed(self.root)
 
 
@@ -252,7 +315,10 @@ class Trace(BaseModel):
         description="List of messages exchanged in the conversation so far.",
     )
 
-    def __init__(self, messages: Messages | list[dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        messages: Messages | list[PersistedTurn | Message | dict[str, Any]] | None = None,
+    ):
         super().__init__(messages=messages or Messages())
 
     def __str__(self):
@@ -424,7 +490,7 @@ class Context(BaseModel):
         """
         system_message = self.get_system_message()
         if system_message is None:
-            self.trace.messages = [None]
+            self.trace.messages = []
         else:
             self.trace.messages = [system_message]
 
@@ -444,7 +510,7 @@ class Context(BaseModel):
                             }
                         )
 
-    def get_system_message(self) -> Message | None:
+    def get_system_message(self) -> PersistedTurn | None:
         """
             Convenience method to get the initial system message from the trace, if present.
         """

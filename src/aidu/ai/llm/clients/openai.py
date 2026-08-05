@@ -66,7 +66,9 @@ def _estimate_cost_usd(model: str | None, prompt_tokens: int, completion_tokens:
     return ((prompt_tokens * rates["input"]) + (completion_tokens * rates["output"])) / 1_000_000
 
 
-def _chat_completion_message(message: dict) -> dict:
+def _chat_completion_message(message) -> dict:
+    if hasattr(message, "model_dump"):
+        message = message.model_dump(exclude_none=True)
     allowed_keys = {
         "role",
         "content",
@@ -394,7 +396,7 @@ def run_smoke_test_ask(console):
     )
 
     # Build full dialog flow: system -> user -> assistant
-    full_dialog = context.trace.messages + [message, response]
+    full_dialog = [*context.trace.messages, message, response]
 
     console.rule("Messages exchanged in the conversation")
     table = Table(show_header=True, header_style="bold cyan")

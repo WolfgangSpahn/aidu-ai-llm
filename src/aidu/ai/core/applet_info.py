@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
+
+
+class MessageRecord(Protocol):
+    def get(self, key: str, default: Any = None) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,7 @@ class AppletInfo:
         return cls(payload={"value": parsed})
 
     @classmethod
-    def from_message(cls, message: dict[str, Any]) -> "AppletInfo | None":
+    def from_message(cls, message: MessageRecord) -> "AppletInfo | None":
         applet_input = message.get("applet_input")
         if message.get("kind") == "applet" and isinstance(applet_input, dict):
             return cls.from_payload(applet_input)

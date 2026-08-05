@@ -82,8 +82,9 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         Assess learning evidence against teacher-defined targets. Return ONLY JSON.
 
         CURRENT_MESSAGE is the only source of learner evidence.
-        LAST_MESSAGE, HISTORY, and ACTIVITY_STATE provide context for interpreting
-        short or referential answers, but they are not learner evidence themselves.
+        TUTOR_QUESTION_OR_INSTRUCTION, HISTORY, and ACTIVITY_STATE provide context
+        for interpreting short or referential answers, but they are not learner
+        evidence themselves.
 
         quote rule:
         quote must be an exact substring of CURRENT_MESSAGE.
@@ -105,7 +106,12 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - Do not duplicate broad+narrow evidence.
         - Omit targets with no direct learner evidence.
         - Do not reward information supplied only by the tutor, history, or activity.
-        - A short answer may be evidence when LAST_MESSAGE makes its meaning clear.
+        - First identify exactly what TUTOR_QUESTION_OR_INSTRUCTION asked the
+          learner to say, predict, identify, or do. Assess CURRENT_MESSAGE and
+          ACTIVITY_STATE only against that request; do not assess an unrelated
+          fact merely because it appears in the applet state.
+        - A short answer may be evidence when TUTOR_QUESTION_OR_INSTRUCTION makes
+          its meaning clear.
         - Omit evidence when context is insufficient to decide whether the answer
           supports or contradicts the target.
         - Prefer no evidence over speculative evidence. A learner's successful
@@ -114,6 +120,9 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - ACTIVITY_STATE may disambiguate what the learner is referring to, but
           it must never add knowledge, reasoning, or particle identification that
           the learner did not express in CURRENT_MESSAGE.
+        - Machine-generated status text and structured applet values are never
+          learner-authored quotes, even when the UI displays them beside the
+          learner message. Use them only to verify the learner's claim or action.
         - A displayed value, name, symbol, or charge copied by the learner is at
           most weak evidence for a target that explicitly requires identifying or
           reading that displayed item. It is not evidence that the learner can
@@ -138,8 +147,15 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - When CURRENT_MESSAGE and ACTIVITY_STATE conflict about whether an
           applet action succeeded, do not reward the claimed action as positive
           evidence. Apply the conceptual-evidence boundary above; otherwise omit.
+        - Compare TUTOR_QUESTION_OR_INSTRUCTION's requested object or action with
+          ACTIVITY_STATE's observed object or action. A mismatch must never receive positive
+          evidence for either the requested or observed concept. It is negative
+          application evidence only when choosing the wrong object directly tests
+          a distinction named by a teacher-defined target; otherwise omit it.
+          A vague claim such as "I added something" does not identify the object
+          and cannot become positive evidence from applet telemetry.
         - An uncertainty response such as "I don't know" is negative evidence
-          only for the specific target directly tested by LAST_MESSAGE. Do not
+          only for the specific target directly tested by TUTOR_QUESTION_OR_INSTRUCTION. Do not
           attach it to another target mentioned in HISTORY or ACTIVITY_STATE.
         - If LAST_MESSAGE revealed the answer, do not treat repetition or
           paraphrase as independent knowledge. Use support_level "answer_revealed"
@@ -163,8 +179,8 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         HISTORY:
         {history}
 
-        LAST_MESSAGE:
-        {last_message}
+        TUTOR_QUESTION_OR_INSTRUCTION:
+        {tutor_question}
 
         CURRENT_MESSAGE:
         {current_message}
@@ -189,7 +205,7 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         return {
             "learning_targets": json.dumps(learning_targets, ensure_ascii=False),
             "history": dialog_history(context),
-            "last_message": last_tutor_message(context),
+            "tutor_question": last_tutor_message(context),
             "current_message": current_message,
             "activity_state": activity_state(context),
         }
@@ -263,7 +279,7 @@ def smoke_test(console):
             ]
         ),
         "history": " - assistant: Compare 3/4 and 2/3.\n - user: I will use a common denominator.",
-        "last_message": "Tutor: Which fraction is greater, and why?",
+        "tutor_question": "Tutor: Which fraction is greater, and why?",
         "current_message": "3/4 is greater because 9/12 is more than 8/12.",
         "activity_state": "{}",
     }

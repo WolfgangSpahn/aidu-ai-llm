@@ -25,10 +25,8 @@ def populate_activity_context(
     """Build ``ActivityContext(n)`` from ``ActivityContext(n-1)`` and a score.
 
     The understandable whole-test score becomes the conservative prior for all
-    configured targets. Target annotations determine evidence breadth and are
-    retained for diagnostics, but cannot inflate initial mastery above the
-    score shown to the learner and teacher. The other two context elements are
-    inherited, and the input context is never mutated.
+    configured targets. Target annotations retain diagnostic evidence breadth
+    but cannot inflate mastery above the score shown to learner and teacher.
 
     ``question_count`` is used as evidence mass because several option
     observations from one question are correlated.  This follows the scoring

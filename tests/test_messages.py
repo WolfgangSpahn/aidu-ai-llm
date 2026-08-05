@@ -1,10 +1,15 @@
-from aidu.ai.core.context import Context, Message, Messages, Trace
+import pytest
+from pydantic import ValidationError
+
+from aidu.ai.core.context import Context, Message, Messages, PersistedTurn, Trace
 
 
 def test_messages_returns_latest_persisted_learner_states():
     messages = Messages.model_validate(
         [
             {
+                "role": "assistant",
+                "content": "Assessment snapshot",
                 "backend_knowledge_progress_state": {
                         "target-1": {
                             "mastery": 1.0,
@@ -28,11 +33,46 @@ def test_messages_returns_latest_persisted_learner_states():
     assert messages.latest_belief().confidence == 0.3
 
 
+def test_messages_wire_shape_preserves_required_null_in_knowledge_snapshot():
+    messages = Messages.model_validate(
+        [{
+            "role": "assistant",
+            "content": "Prior state",
+            "backend_knowledge_progress_state": {
+                "target-1": {
+                    "mastery": 0.4,
+                    "positive_evidence": 0.3,
+                    "negative_evidence": 0.45,
+                    "entry_prior": 0.4,
+                    "entry_weight": 0.75,
+                    "source_count": 1,
+                    "turn_assessment_count": 0,
+                    "last_updated_turn": None,
+                    "evidence_fingerprints": [],
+                }
+            },
+        }]
+    )
+
+    serialized = messages.model_dump()
+
+    assert serialized[0]["backend_knowledge_progress_state"]["target-1"]["last_updated_turn"] is None
+    assert "avatar" not in serialized[0]
+
+
+def test_messages_rejects_unknown_persisted_turn_fields_at_the_boundary():
+    with pytest.raises(ValidationError, match="unexpected_metadata"):
+        Messages.model_validate(
+            [{"role": "user", "content": "Hello", "unexpected_metadata": True}]
+        )
+
+
 def test_trace_coerces_history_to_messages_and_preserves_wire_shape():
     trace = Trace(messages=[{"role": "user", "content": "Hello"}])
     trace.messages.append(Message(role="assistant", content="Hi"))
 
     assert isinstance(trace.messages, Messages)
+    assert all(isinstance(turn, PersistedTurn) for turn in trace.messages)
     assert trace.model_dump()["messages"] == [
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hi"},
@@ -59,7 +99,7 @@ def test_messages_builds_dialog_history_from_applet_records():
         " - user: Applet event: periodic-table with elementSymbol=H\n"
         "Student said: I selected it"
     )
-    assert messages.cleaned_dialog().root[0]["applet_input"] == {
+    assert messages.cleaned_dialog().root[0].applet_input == {
         "applet": "periodic-table",
         "infoStore": {"elementSymbol": "H"},
     }
