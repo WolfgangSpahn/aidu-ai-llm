@@ -1013,3 +1013,6 @@ graph TD
 | ---- | ------ | ----- | -------------- | ---------------- | ----------------- |
 | 2026-08-04 | `89d3c1f4d7a4568c67643a8edf1ea0148a7bcf96` | Initial audit of `src/aidu/ai/core` with tests and direct consumers | CON-001–CON-013 | — | — |
 | 2026-08-04 | `uncommitted` | Vertical consolidation of persisted conversation turns and their direct consumers | — | CON-002, CON-003, CON-009, CON-010 | CON-002 unrestricted history dictionaries and flattened payload |
+
+
+
