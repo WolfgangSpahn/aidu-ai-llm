@@ -216,7 +216,7 @@ def test_build_an_atom_tool_requires_and_emits_student_utterance():
     assert isinstance(result.artifacts[0], AppletArtifact)
     assert isinstance(result.artifacts[1], TextArtifact)
     assert result.artifacts[0].content["infoStore"]["shorttext"] == (
-        "Placed: 6 protons, 7 neutrons, 2 inner electrons, 4 outer electrons."
+        "Applet state: 6 protons, 7 neutrons, 2 inner electrons, 4 outer electrons."
     )
     assert set(result.artifacts[0].content["infoStore"]) == {
         "shorttext", "lewisChemfig", "electronShellSchema", "neutronCount",

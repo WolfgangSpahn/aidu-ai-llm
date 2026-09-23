@@ -126,6 +126,24 @@ def test_chem_applet_tutor_prompt_args_include_applet_specific_instructions():
     assert "The applet shows A:3" in args["applet_tutor_instructions"]
 
 
+def test_chem_applet_prompt_selects_localized_task_for_progress_band():
+    args = build_chem_applet_prompt_args(
+        applet={
+            "progress_status_template": "Im Moment stehst Du bei {progress}%.",
+            "progress_tasks": {
+                "0-25": "task one",
+                "25-50": "task two",
+                "50-75": "task three",
+                "75-100": "task four",
+            },
+        },
+        current_progress_percent=63,
+    )
+
+    assert args["current_progress_status"] == "Im Moment stehst Du bei 63%."
+    assert args["selected_applet_task"] == "task three"
+
+
 def test_applet_rule_feedback_derives_build_an_atom_followup_from_infostore():
     feedback = build_deterministic_applet_feedback(
         {

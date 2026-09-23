@@ -15,7 +15,6 @@ from aidu.ai.core.config import AskConfig
 from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.agent import WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
-from aidu.ai.core.belief import StudentBelief
 from aidu.ai.agents.assessment_context import (
     activity_state,
     dialog_history,
@@ -26,43 +25,51 @@ logger = logging.getLogger(__name__)
 
 
 class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
-    """Estimate the canonical ``StudentBelief`` dimensions for one learner turn."""
+    """Extract learner speech acts that can support a belief-state update."""
 
     prompt_template = textwrap.dedent("""\
-        Estimate the student's current learning state. Return ONLY JSON.
+        Extract observable evidence about the student's current learning state.
+        Return ONLY JSON. Do not choose final belief-state values.
 
         CURRENT_MESSAGE is the primary evidence about the student now.
         LAST_MESSAGE, HISTORY, and ACTIVITY_STATE may clarify short or
-        referential answers. PRIOR_BELIEF is the baseline from the preceding
-        turn; retain it when the current turn provides no reason to change a
-        dimension.
+        referential answers. Classify what the learner communicates before any
+        mental-state inference.
 
-        Output exactly:
-        {{"belief":{{"engagement":0.0,"confidence":0.0,"confusion":0.0,
-        "frustration":0.0,"curiosity":0.0,"self_explanation":0.0,
-        "guessing":0.0,"help_seeking":0.0}},"review":false}}
+        Output exactly this shape (the example speech_act is one value):
+        {{"evidence":[{{"speech_act":"hypothesize",
+        "strength":"weak|moderate|strong",
+        "confidence":0.0,"quote":"exact learner quote"}}],"review":false}}
 
         Rules:
-        - Every belief value must be a number from 0 to 1.
-        - Return all eight dimensions.
-        - Estimate observable state, not subject-matter mastery.
-        - Do not infer emotion from correctness alone.
-        - Change values conservatively from PRIOR_BELIEF. A single short answer,
-          correct response, or successful action cannot establish an extreme
-          persistent state. Normally change a dimension by no more than 0.15;
-          repeated evidence across turns is required to approach 0 or 1.
-        - Engagement: active participation and sustained effort.
-        - Confidence: certainty expressed in the learner's own response.
-        - Confusion: difficulty understanding or choosing a next step.
-        - Frustration: irritation, discouragement, or repeated blocked effort.
-        - Curiosity: interest, exploration, prediction, or conceptual questions.
-        - Self-explanation: explaining relationships or reasoning in own words.
-        - Guessing: unsupported answers or trial without stated reasoning.
-        - Help-seeking: requests for hints, confirmation, or guidance.
+        - review is a required top-level boolean, alongside evidence.
+          Never put review inside an evidence item. Each evidence item has only
+          speech_act, strength, confidence, and quote.
+        - Return at most four evidence items; an empty list is valid.
+        - speech_act must be EXACTLY ONE value from this list:
+          state, hypothesize, explain, report_observation, ask,
+          ask_for_explanation, ask_for_hint, ask_for_confirmation, infer,
+          predict, compare, justify, confirm, reject, identify_error,
+          express_uncertainty, report_action, propose_action, commit_action,
+          acknowledge, express_understanding, express_nonunderstanding,
+          request_continue, request_topic_change, request_stop, off_topic.
+        - Never combine values with "|", and never invent values such as answer.
+          Use state for assertions; assert is not an allowed speech_act.
+          express_surprise is not an allowed speech_act. Omit unsupported
+          emotional labels; do not translate surprise into understanding.
+        - Quote must be an exact substring of CURRENT_MESSAGE.
+        - Use the speech-act ontology, not final learner-state dimensions.
+        - Do not infer emotion, confidence, or engagement from correctness.
+        - Python maps validated speech acts to numeric belief-state changes.
+        - confidence is confidence that the quoted text supports this evidence.
+        - strength describes how explicit and substantial the signal is.
+        - Prefer the most specific act (for example ask_for_hint over ask).
+        - hypothesize expresses possibility; it is not the same as guessing.
+          For example, "Nitrogen, I guess" is hypothesize and may separately
+          contain express_uncertainty; "answer" is not a speech act.
+        - explain and justify require an expressed reason or relationship.
+        - express_uncertainty and express_nonunderstanding must be explicit.
         - Set review:true only when the evidence cannot be interpreted reliably.
-
-        PRIOR_BELIEF:
-        {prior_belief}
 
         HISTORY:
         {history}
@@ -87,9 +94,7 @@ class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
         current_message: str,
     ) -> dict[str, Any]:
         """Build this assessor's prompt values from the canonical turn context."""
-        belief: StudentBelief = context.state.data["StudentBelief"]
         return {
-            "prior_belief": belief.model_dump_json(),
             "history": dialog_history(context),
             "last_message": last_tutor_message(context),
             "current_message": current_message,
@@ -105,11 +110,10 @@ class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
         ask_params: dict | None = None,
         ask_config: AskConfig | None = None,
     ) -> tuple[AgentResult, Context]:
-        """Ask the configured model for the current turn's belief estimate."""
+        """Ask the configured model for observable acts in the current turn."""
         if not context.on_air:
-            belief: StudentBelief = context.state.data["StudentBelief"]
             assessment = {
-                "belief": belief.model_dump(),
+                "evidence": [],
                 "review": True,
             }
             result = self.result(

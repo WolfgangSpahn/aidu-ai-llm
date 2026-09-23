@@ -55,7 +55,7 @@ class AppletInfo:
     @classmethod
     def from_message(cls, message: MessageRecord) -> "AppletInfo | None":
         applet_input = message.get("applet_input")
-        if message.get("kind") == "applet" and isinstance(applet_input, dict):
+        if isinstance(applet_input, dict) and applet_input:
             return cls.from_payload(applet_input)
 
         content = str(message.get("content") or "").strip()
@@ -82,6 +82,18 @@ class AppletInfo:
             for key in keys
             if key in source and source[key] is not None
         }
+
+    def state_summary(self) -> str:
+        """Describe a recorded configuration without implying a recent action."""
+        shorttext = self.info_store.get("shorttext")
+        if isinstance(shorttext, str) and shorttext.strip():
+            text = shorttext.strip()
+            if text.startswith("Placed:"):
+                text = text.removeprefix("Placed:").strip()
+            if text == "No particles placed.":
+                text = "No particles."
+            return text if text.lower().startswith("applet state:") else f"Applet state: {text}"
+        return f"Applet state: {self.applet} with " + json.dumps(self.selected_info(), ensure_ascii=False)
 
     def to_text(self, keys: Iterable[str] | None = None) -> str:
         details = ", ".join(

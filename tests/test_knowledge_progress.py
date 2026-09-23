@@ -23,6 +23,42 @@ def test_student_knowledge_progress_preserves_canonical_wire_shape():
     assert progress.model_dump() == {"target-1": VALID_STATE}
 
 
+def test_student_knowledge_progress_reports_mean_mastery_percent():
+    progress = StudentKnowledgeProgress.model_validate(
+        {
+            "target-1": VALID_STATE,
+            "target-2": {
+                **VALID_STATE,
+                "mastery": 0.8,
+                "positive_evidence": 0.8,
+                "negative_evidence": 0.2,
+            },
+        }
+    )
+
+    assert progress.mean_mastery_percent() == 60
+
+
+def test_student_knowledge_progress_excludes_unknown_targets_from_progress_percent():
+    progress = StudentKnowledgeProgress.model_validate(
+        {
+            "target-1": {
+                "mastery": 0.5,
+                "positive_evidence": 0.0,
+                "negative_evidence": 0.0,
+                "entry_prior": 0.5,
+                "entry_weight": 0.0,
+                "source_count": 0,
+                "turn_assessment_count": 0,
+                "last_updated_turn": None,
+                "evidence_fingerprints": [],
+            }
+        }
+    )
+
+    assert progress.mean_mastery_percent() == 0
+
+
 @pytest.mark.parametrize(
     "change",
     [

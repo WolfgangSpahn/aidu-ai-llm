@@ -3,7 +3,23 @@
 # MIT License — see LICENSE file for details.
 """Canonical state produced when supervising an AI tutor response."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+
+InterventionName = Literal[
+    "CONTINUE", "PROBE", "RECALL", "ELICIT_EXPLANATION", "CHALLENGE",
+    "CONTRAST", "HINT", "DIRECT_ATTENTION", "EXPLAIN", "MODEL_EXAMPLE",
+    "TRANSFER", "META_REFLECT", "AFFECT_REGULATE", "ADJUST_DIFFICULTY",
+]
+
+
+class InterventionLabel(BaseModel):
+    """Dominant pedagogical intention attributed to a tutor response."""
+
+    intervention: InterventionName
+    reason: str
 
 
 class SupervisorResult(BaseModel):
@@ -21,6 +37,7 @@ class SupervisorState(BaseModel):
     knowledge_alignment: SupervisorResult
     belief_alignment: SupervisorResult
     scaffolding_fit: SupervisorResult
+    intervention: InterventionLabel | None = None
     assessed_tutor_turn_index: int | None = Field(default=None, ge=0)
     outcome_student_turn_index: int | None = Field(default=None, ge=0)
     outcome_evidence_available: bool = True

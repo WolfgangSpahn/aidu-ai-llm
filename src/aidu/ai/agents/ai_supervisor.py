@@ -15,10 +15,11 @@ from aidu.ai.core.config import AskConfig
 from aidu.ai.core.context import Context, Message
 from aidu.ai.llm.agent import WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
+from aidu.ai.core.applet_info import AppletInfo
 from aidu.ai.core.belief import StudentBelief
 from aidu.ai.core.supervisor import SUPERVISOR_DIMENSIONS
 from aidu.ai.agents.assessment_context import (
-    dialog_history,
+    MAX_HISTORY_TURNS,
     last_tutor_message,
     tutor_activity_state,
 )
@@ -33,9 +34,9 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         Assess the preceding AI tutor response for a later human reviewer.
         Return ONLY JSON.
 
-        Evaluate LAST_TUTOR_MESSAGE in the context of CURRENT_STUDENT_MESSAGE,
-        TEACHER_TARGETS, STUDENT_KNOWLEDGE_PROGRESS, STUDENT_BELIEF, recent
-        HISTORY, and APPLET_STATE_AT_TUTOR_TURN.
+        Evaluate LAST_TUTOR_MESSAGE in the context of TEACHER_TARGETS,
+        STUDENT_KNOWLEDGE_PROGRESS, STUDENT_BELIEF, prior-dialog HISTORY, and
+        APPLET_STATE_AT_TUTOR_TURN.
 
         Output exactly:
         {{"factual_fit":{{"fit":0.0,"reason":""}},
@@ -50,21 +51,25 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         - LAST_TUTOR_MESSAGE is the authoritative tutor turn to assess. HISTORY
           may contain the same turn for chronology; that duplication is
           intentional and is never a tutor-quality problem.
+        - IS_INITIAL_TUTOR_TURN identifies the opening tutor message in the full
+          conversation, even when HISTORY contains only a recent excerpt.
+          When true, judge it as an opening invitation: orientation, a manageable
+          first action, and an observation question can be sufficient. Do not
+          expect it to acknowledge earlier learner answers or provide feedback
+          on an investigation that has not happened yet.
+          When false, judge it as a continuation using the available prior context.
+          When null, the opening position is unknown; do not infer it merely
+          because the visible HISTORY is short.
         - Assess only the quality of this one turn at its position in the
           dialog. Do not require one message to complete the lesson, address
           every teacher target, or contain every later scaffold.
         - A fit of 1.0 means fully appropriate for this turn and context, not a
           perfect or complete lesson.
-        - Treat CURRENT_STUDENT_MESSAGE as outcome evidence: it may show whether
-          the preceding tutor intervention was understandable and productive.
-          It occurred AFTER LAST_TUTOR_MESSAGE. Never criticize the tutor for
-          failing to acknowledge, answer, or react to information that appears
-          for the first time in CURRENT_STUDENT_MESSAGE. Describe such evidence
-          as an outcome (for example, "the outcome shows the instruction was
-          unclear"), not as context the tutor already possessed.
-          When OUTCOME_EVIDENCE_AVAILABLE is false, no later learner turn
-          exists: assess the tutor response intrinsically and do not penalize
-          it for missing outcome evidence.
+        - Assess the tutor using only information available at the time of
+          LAST_TUTOR_MESSAGE. HISTORY ends with that tutor message and contains
+          only earlier dialog; no later learner response or outcome is part of
+          this assessment. Never use a student's subsequent response as evidence
+          for or against the tutor's performance.
         - Give one concise reason for each fit score so a human reviewer can
           understand the signal later.
         - Every reason must evaluate only LAST_TUTOR_MESSAGE. HISTORY is context,
@@ -76,6 +81,13 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         - Assess what happened; do not propose revisions or future actions.
         - Do not discuss prompt fields, message selection, duplicated context,
           missing metadata, or how the supervisor input was assembled.
+        - APPLET_STATE_SUMMARY describes the latest recorded applet configuration
+          available before the assessed tutor response. It is machine-generated
+          context, not learner-authored evidence or proof of an action on that
+          turn. The configuration may be unchanged from earlier turns; the time
+          of its last change is unknown. Do not infer a recent placement or
+          penalize the tutor based on a later applet snapshot. An unavailable
+          snapshot does not establish a factual error.
         - factual_fit: score only factual correctness and consistency with
           APPLET_STATE_AT_TUTOR_TURN. Do not lower it for pedagogical omissions.
         - goal_alignment: score whether this turn advances at least one relevant
@@ -107,20 +119,17 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         HISTORY:
         {history}
 
-        CURRENT_STUDENT_MESSAGE:
-        {current_student_message}
-
-        OUTCOME_EVIDENCE_AVAILABLE:
-        {outcome_evidence_available}
-
         LAST_TUTOR_MESSAGE:
         {last_tutor_message}
+
+        IS_INITIAL_TUTOR_TURN:
+        {is_initial_tutor_turn}
 
         ASSESSED_TUTOR_TURN_INDEX:
         {assessed_tutor_turn_index}
 
-        OUTCOME_STUDENT_TURN_INDEX:
-        {outcome_student_turn_index}
+        APPLET_STATE_SUMMARY:
+        {applet_state_summary}
 
         APPLET_STATE_AT_TUTOR_TURN:
         {applet_state_at_tutor_turn}
@@ -133,30 +142,47 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
         cls,
         *,
         context: Context,
-        current_student_message: str,
-        outcome_evidence_available: bool = True,
     ) -> dict[str, Any]:
         """Build supervision values for the preceding tutor intervention."""
         belief: StudentBelief = context.state.data["StudentBelief"]
         progress = context.state.data["StudentKnowledgeProgress"]
         targets = context.state.data["SessionContext"].domain_targets
         teacher_targets = [{"id": target["id"], "text": target["text"]} for target in targets if target["id"] in progress.root]
+        recorded_state = context.trace.messages.applet_state_before_last_tutor_message()
+        # The current learner turn triggers retrospective assessment, but it
+        # follows the tutor message and must not be exposed to the supervisor.
+        recent_messages = context.trace.messages[-MAX_HISTORY_TURNS:]
+        tutor_position = next(
+            (
+                index
+                for index in range(len(recent_messages) - 1, -1, -1)
+                if recent_messages[index].role == "assistant"
+            ),
+            None,
+        )
+        prior_dialog_history = json.dumps(
+            [message.to_dict() for message in recent_messages[: tutor_position + 1]]
+            if tutor_position is not None else [],
+            ensure_ascii=False,
+        )
         return {
+            "applet_state_summary": (
+                AppletInfo.from_payload(recorded_state).state_summary()
+                if recorded_state else "Applet state: No recorded snapshot available before this tutor response."
+            ),
             "teacher_targets": json.dumps(teacher_targets, ensure_ascii=False),
             "student_knowledge_progress": progress.model_dump_json(),
             "student_belief": belief.model_dump_json(),
-            "history": dialog_history(context),
-            "current_student_message": current_student_message,
-            "outcome_evidence_available": json.dumps(outcome_evidence_available),
+            "history": prior_dialog_history,
             "last_tutor_message": last_tutor_message(context),
+            "is_initial_tutor_turn": json.dumps(
+                context.state.data.get(
+                    "IsInitialTutorTurn",
+                    True if context.state.data.get("LastTutorTurnIndex") == 0 else None,
+                )
+            ),
             "assessed_tutor_turn_index": json.dumps(
                 context.state.data.get("LastTutorTurnIndex")
-            ),
-            "outcome_student_turn_index": json.dumps(
-                context.state.data.get(
-                    "OutcomeStudentTurnIndex",
-                    max(0, context.state.data.get("TurnIndex", 1) - 1),
-                ) if outcome_evidence_available else None
             ),
             "applet_state_at_tutor_turn": tutor_activity_state(context),
         }

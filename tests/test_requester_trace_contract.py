@@ -136,3 +136,25 @@ def test_openai_chat_message_drops_trace_only_applet_metadata():
         "role": "user",
         "content": "Applet event: applet-periodic-table",
     }
+
+
+def test_assessment_logging_contains_complete_rendered_request(caplog):
+    import json
+    import logging
+
+    client = CapturingClient()
+    requester = LLMRequester(client=client, prompt_template="Assess {topic}.")
+    context = Context(trace=Trace(messages=[{"role": "assistant", "content": "Apologies for that cutoff!"}]))
+    label = "assessment_id=test assessor=AiSupervisor tutor_turn=#15 learner_turn=#16"
+    context.control.data["assessment_log_label"] = label
+    with caplog.at_level(logging.INFO, logger="aidu.ai.llm.requester"):
+        requester.ask({"role": "user", "content": "Assess the preceding tutor response."}, context,
+                      ask_params={"topic": "atomic structure"})
+    record = next(record for record in caplog.records if record.getMessage().startswith("Assessment prompt"))
+    header, payload = record.getMessage().split("\n", 1)
+    assert label in header
+    assert "model=fake-model" in header
+    assert json.loads(payload) == [
+        message.to_dict() if hasattr(message, "to_dict") else message for message in client.messages
+    ]
+    assert json.loads(payload)[0]["content"] == "Assess atomic structure."

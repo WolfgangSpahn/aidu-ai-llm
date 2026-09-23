@@ -104,6 +104,7 @@ class PersistedTurn(BaseModel):
     cost_usd: float | None = None
     model: str | None = None
     timestamp: float | None = None
+    backend_assessment_evidence: dict[str, Any] | None = None
     backend_belief_state: StudentBelief | None = None
     backend_knowledge_progress_state: StudentKnowledgeProgress | None = None
     backend_knowledge_state_kind: str | None = None
@@ -161,7 +162,7 @@ class PersistedTurn(BaseModel):
             role=role,
             content=content,
             kind="applet" if self.kind == "applet" and self.applet_input else None,
-            applet_input=self.applet_input if self.kind == "applet" else None,
+            applet_input=self.applet_input,
         )
 
 

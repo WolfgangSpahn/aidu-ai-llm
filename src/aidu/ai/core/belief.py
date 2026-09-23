@@ -2,7 +2,9 @@
 #
 # MIT License — see LICENSE file for details.
 # If you use this software in academic work, citation of the original author is requested.
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StudentKnowledge(BaseModel):
@@ -377,24 +379,76 @@ class StudentBelief(BaseModel):
         return " ".join(observations)
 
 
-class StudentBeliefSnapshot(BaseModel):
-    """Complete belief vector required from a student-belief assessment."""
+LearnerSpeechAct = Literal[
+    "state", "hypothesize", "explain", "report_observation", "ask",
+    "ask_for_explanation", "ask_for_hint", "ask_for_confirmation", "infer",
+    "predict", "compare", "justify", "confirm", "reject", "identify_error",
+    "express_uncertainty", "report_action", "propose_action", "commit_action",
+    "acknowledge", "express_understanding", "express_nonunderstanding",
+    "request_continue", "request_topic_change", "request_stop", "off_topic",
+]
 
-    engagement: float = Field(ge=0.0, le=1.0)
+
+class StudentBeliefEvidence(BaseModel):
+    """One observable learner speech act used to derive belief state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    speech_act: LearnerSpeechAct
+    strength: Literal["weak", "moderate", "strong"]
     confidence: float = Field(ge=0.0, le=1.0)
-    confusion: float = Field(ge=0.0, le=1.0)
-    frustration: float = Field(ge=0.0, le=1.0)
-    curiosity: float = Field(ge=0.0, le=1.0)
-    self_explanation: float = Field(ge=0.0, le=1.0)
-    guessing: float = Field(ge=0.0, le=1.0)
-    help_seeking: float = Field(ge=0.0, le=1.0)
+    quote: str = Field(min_length=1)
+
+    @field_validator("speech_act", mode="before")
+    @classmethod
+    def normalize_composite_speech_act(cls, value: object) -> object:
+        """Normalize common model wording to the canonical speech-act names."""
+        if not isinstance(value, str):
+            return value
+        aliases = {
+            "answer": "state",
+            "assert": "state",
+            "guess": "hypothesize",
+            "question": "ask",
+        }
+        value = aliases.get(value.strip(), value)
+        if "|" not in value:
+            return value
+        allowed = set(LearnerSpeechAct.__args__)
+        parts = [aliases.get(part.strip(), part.strip()) for part in value.split("|")]
+        recognized = [part for part in parts if part in allowed]
+        return recognized[0] if recognized else value
 
 
 class StudentBeliefAssessment(BaseModel):
-    """Structured output contract of ``StudentBeliefAssessor``."""
+    """Observable evidence returned by ``StudentBeliefAssessor``."""
 
-    belief: StudentBeliefSnapshot
+    model_config = ConfigDict(extra="forbid")
+
+    evidence: list[StudentBeliefEvidence] = Field(max_length=4)
     review: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_misplaced_review(cls, value: object) -> object:
+        """Recover boolean review flags misplaced inside evidence by the model."""
+        if not isinstance(value, dict) or not isinstance(value.get("evidence"), list):
+            return value
+        items = value["evidence"]
+        flags = [item["review"] for item in items if isinstance(item, dict) and "review" in item]
+        if not flags or not all(isinstance(flag, bool) for flag in flags):
+            return value
+        if "review" in value and not isinstance(value["review"], bool):
+            return value
+        return {
+            **value,
+            "review": value.get("review", False) or any(flags),
+            "evidence": [
+                {key: field for key, field in item.items() if key != "review"}
+                if isinstance(item, dict) else item
+                for item in items
+            ],
+        }
 
 
 if __name__ == "__main__":

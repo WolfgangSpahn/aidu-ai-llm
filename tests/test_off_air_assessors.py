@@ -38,7 +38,7 @@ def test_learning_target_assessor_emits_valid_off_air_test_output():
     assert assessment == {"evidence": [], "review": True}
 
 
-def test_student_belief_assessor_preserves_prior_belief_off_air():
+def test_student_belief_assessor_emits_no_evidence_off_air():
     prior = StudentBelief(confidence=0.8, confusion=0.2)
     context = Context(on_air=False)
     context.state.data["StudentBelief"] = prior
@@ -49,7 +49,7 @@ def test_student_belief_assessor_preserves_prior_belief_off_air():
     )
 
     parsed = StudentBeliefAssessment.model_validate(assessment)
-    assert parsed.belief.model_dump() == prior.model_dump()
+    assert parsed.evidence == []
     assert parsed.review is True
 
 

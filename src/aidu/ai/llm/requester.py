@@ -276,6 +276,18 @@ class LLMRequester:
         message_dict = self._message_as_dict(message)
         effective_context = self._context_for_llm_call(context, message=message_dict, prompt_params=ask_params)
 
+        assessment_label = context.control.data.get("assessment_log_label")
+        if assessment_label and logger.isEnabledFor(logging.INFO):
+            request_messages = [
+                self._message_as_dict(turn) for turn in effective_context.trace.messages
+            ] + [message_dict]
+            logger.info(
+                "Assessment prompt %s model=%s\n%s",
+                assessment_label,
+                getattr(self.client, "model", None),
+                json.dumps(request_messages, ensure_ascii=False, indent=2),
+            )
+
         # inject instance-level tools into the per-call config
         from dataclasses import replace as dataclass_replace
 

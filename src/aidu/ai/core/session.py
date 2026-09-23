@@ -28,6 +28,7 @@ class SessionContext(BaseModel):
     username: str = ""
     class_name: str = ""
     class_voucher: str = ""
+    language: str = "en"
     lesson_id: str = ""
     activity_id: str = ""
     subject: str = ""
@@ -156,6 +157,7 @@ class RoutedMessage(BaseModel):
     applet: str | None = None
     applet_command: dict[str, Any] | None = None
     activity_event: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
+    backend_assessment_evidence: dict[str, Any] | None = None
     backend_belief_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
     backend_knowledge_progress_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
     backend_supervision_state: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)

@@ -13,17 +13,18 @@ from pprint import pformat
 from dotenv import load_dotenv
 
 from rich.console import Console
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aidu.ai.core.agent_result import AgentResult
 from aidu.ai.core.config import AskConfig
 from aidu.ai.core.artifacts import TextArtifact
 from aidu.support.filesystem.search import find_up
 from aidu.ai.core.context import Context, Message
-from aidu.ai.llm.clients.openai import OpenAIClient
+from aidu.ai.llm.clients.google import GoogleClient
 from aidu.ai.llm.agent import EndAgent, WorkflowAgent
 from aidu.ai.llm.fc_requester import LLMFcRequester
 from aidu.ai.agents.assessment_context import (
+    activity_change,
     activity_state,
     dialog_history,
     last_tutor_message,
@@ -46,9 +47,8 @@ class TargetEvidenceAssessment(BaseModel):
         "explanation",
         "application",
         "correction",
-        "guess",
-        "hinted_response",
     ]
+    response_mode: Literal["deliberate", "uncertain", "guess"]
     support_level: Literal[
         "independent",
         "small_prompt",
@@ -57,6 +57,20 @@ class TargetEvidenceAssessment(BaseModel):
         "answer_revealed",
     ]
     quote: str = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_misplaced_response_mode(cls, value: Any) -> Any:
+        """Move response-mode labels accidentally emitted as support levels."""
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        misplaced = normalized.get("support_level")
+        if misplaced not in {"deliberate", "uncertain", "guess"}:
+            return normalized
+        normalized.setdefault("response_mode", misplaced)
+        normalized["support_level"] = "independent"
+        return normalized
 
 
 class LearningTargetAssessment(BaseModel):
@@ -91,10 +105,24 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         Never quote the tutor, history, activity state, target text, or your own inference.
         Omit an evidence item if no exact learner quote exists.
 
+        SOURCE OF TRUTH — APPLET STATE:
+        The structured ACTIVITY_STATE / infoStore and its before-after change
+        are the ground truth for what the learner actually did and what state
+        the applet reached. They take precedence over a learner's claim about
+        an action, selection, or result. If the learner says an object/value
+        changed but the applet state shows it did not, treat that action/result
+        as not having occurred. Never award positive evidence for completing
+        that action or reaching that result based on the learner's conflicting
+        claim. Score a learner's independently explained scientific reasoning
+        separately; a bare expected result attached to the contradicted action
+        is not an independent explanation. When the conflict leaves their
+        understanding unclear, set review=true and omit positive evidence.
+
         Output:
         {{"evidence":[{{"target":"target-id","direction":"positive|negative",
         "strength":"weak|moderate|strong","confidence":0.0,
-        "evidence_type":"recall|explanation|application|correction|guess|hinted_response",
+        "evidence_type":"recall|explanation|application|correction",
+        "response_mode":"deliberate|uncertain|guess",
         "support_level":"independent|small_prompt|guided|explicit_hint|answer_revealed",
         "quote":"exact learner quote"}}],"review":false}}
 
@@ -117,12 +145,26 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - Prefer no evidence over speculative evidence. A learner's successful
           action, compliance with an instruction, or report of what the applet
           displays does not by itself demonstrate the underlying concept.
-        - ACTIVITY_STATE may disambiguate what the learner is referring to, but
-          it must never add knowledge, reasoning, or particle identification that
-          the learner did not express in CURRENT_MESSAGE.
+        - ACTIVITY_STATE contains the same learner-facing applet summary plus
+          structured values and the before/after change narrative. It may verify
+          what happened, but must never add knowledge, reasoning, or particle
+          identification that the learner did not express in CURRENT_MESSAGE.
         - Machine-generated status text and structured applet values are never
           learner-authored quotes, even when the UI displays them beside the
           learner message. Use them only to verify the learner's claim or action.
+        - ACTIVITY_CHANGE explicitly compares the applet snapshot before the
+          tutor's latest instruction with the current snapshot. Use this as the
+          ground truth for what actually changed. If the tutor requested a
+          change to a particular property but that property is unchanged while
+          another property changed, the learner did not complete the requested
+          applet action.
+          Do not credit the claimed action as application evidence, and do not
+          raise knowledge on the basis of a claimed result contradicted by this
+          comparison. A separately stated concept may count only when the
+          learner explains or justifies it independently of the failed action;
+          an unsupported expected result in that mismatch context is not enough.
+          Set review=true when this contradiction makes the learner's actual
+          understanding uncertain.
         - A displayed value, name, symbol, or charge copied by the learner is at
           most weak evidence for a target that explicitly requires identifying or
           reading that displayed item. It is not evidence that the learner can
@@ -134,8 +176,12 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         - A learner's explicit causal calculation or comparison is conceptual
           application evidence for every target whose teacher-defined wording
           it directly satisfies, even when the learner does not use the target's
-          preferred technical vocabulary. Do not reduce such reasoning to a
-          copied applet value merely because displayed numbers are mentioned.
+          preferred technical vocabulary. However, when ACTIVITY_CHANGE
+          contradicts the learner's claimed applet action, do not credit an
+          expected outcome tied to that uncompleted action as application
+          evidence. Require a separate explanation of the causal relationship
+          before applying the general rule above. Do not reduce valid reasoning
+          to a copied applet value merely because displayed numbers are mentioned.
         - A failed applet attempt can be negative application evidence only when
           the failure itself directly demonstrates knowledge described by the
           target. Interface operation, dragging, placement, visibility, or motor
@@ -163,10 +209,15 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
           revealed answer is demonstrated.
         - confidence measures confidence in this assessment, from 0.0 to 1.0.
         - support_level describes how much help preceded the demonstrated response.
-        - evidence_type describes what the learner actually demonstrated.
+        - evidence_type describes the cognitive performance demonstrated.
+        - response_mode describes whether the answer is deliberate, uncertain,
+          or explicitly presented as a guess.
+        - uncertain and guess are response_mode values, never support_level values.
+          Without preceding help, use support_level "independent".
+        - Never output numeric weights or independence factors.
 
         Strength:
-        - weak: a copied value, isolated observation, or brief recognition without a relationship.
+        - weak: a copied value, isolated observation, unsupported guess, or brief recognition without a relationship.
         - moderate: a correct relationship, prediction, comparison, or explanation in the current case.
         - strong: a general rule stated in the learner's own words, a justified explanation,
           or correct transfer of a relationship to a new case.
@@ -188,6 +239,9 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         ACTIVITY_STATE:
         {activity_state}
 
+        ACTIVITY_CHANGE_SINCE_TUTOR_INSTRUCTION:
+        {activity_change}
+
         JSON:
         """).strip()
 
@@ -208,6 +262,7 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
             "tutor_question": last_tutor_message(context),
             "current_message": current_message,
             "activity_state": activity_state(context),
+            "activity_change": activity_change(context),
         }
 
     def run(
@@ -256,10 +311,10 @@ def smoke_test(console):
     logger.info("Loading environment variables from %s", env_path)
     load_dotenv(env_path)
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    assert api_key, "Missing OPENAI_API_KEY in .env"
+    api_key = os.getenv("GOOGLE_API_KEY")
+    assert api_key, "Missing GOOGLE_API_KEY in .env"
 
-    client = OpenAIClient("gpt-5-mini", config={}, api_key=api_key)
+    client = GoogleClient("gemini-3.5-flash-lite", config={}, api_key=api_key)
 
     LearningTargetAssessor.target = EndAgent
 

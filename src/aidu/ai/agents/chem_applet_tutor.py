@@ -241,6 +241,9 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         "applet_info_store_schema": "TODO_APPLET_INFO_STORE_SCHEMA",
         "applet_tutor_instructions": "TODO_APPLET_TUTOR_INSTRUCTIONS",
         "applet_state": "TODO_CURRENT_APPLET_INFO_STORE",
+        "current_progress_status": "Current estimated learning progress: 0%.",
+        "applet_initial_instruction": "",
+        "selected_applet_task": "",
     }
 
     prompt_template = textwrap.dedent("""\
@@ -278,6 +281,10 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         Student progress:
         {student_knowledge_progress}
 
+        Current overall progress estimate: {current_progress_status}
+        Required initial applet instruction: {applet_initial_instruction}
+        Progress-based continuation after that instruction: {selected_applet_task}
+
         Use student progress as a conservative planning prior:
 
         * Start with a concrete, low-barrier investigation when relevant target
@@ -286,7 +293,12 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
           permission to skip foundations or begin with an abstract question.
         * Increase complexity only after the learner demonstrates the relevant
           relationship in the dialog or applet activity.
-        * Do not tell the learner their hidden estimate or describe them as
+        * Keep the fixed initial applet instruction and the progress-based
+          continuation as two steps, in that order; never substitute one for
+          the other. If the session welcome has not already shared them, include
+          both on the opening tutor turn. If the welcome already did so,
+          acknowledge it without repeating either step. Do not
+          expose per-target scores, confidence, or describe the learner as
           weak, low-performing, or unprepared.
 
         Current learner model:
@@ -664,6 +676,7 @@ def build_chem_applet_prompt_args(
     domain: dict[str, Any] | None = None,
     applet: dict[str, Any] | None = None,
     applet_state: dict[str, Any] | str | None = None,
+    current_progress_percent: int = 0,
 ) -> dict[str, Any]:
     """
     Build prompt args for the generic applet tutor.
@@ -675,6 +688,19 @@ def build_chem_applet_prompt_args(
 
     domain = domain or {}
     applet = applet or {}
+    progress_percent = max(0, min(100, int(current_progress_percent)))
+    if progress_percent < 25:
+        progress_band = "0-25"
+    elif progress_percent < 50:
+        progress_band = "25-50"
+    elif progress_percent < 75:
+        progress_band = "50-75"
+    else:
+        progress_band = "75-100"
+    progress_template = applet.get(
+        "progress_status_template",
+        "You are currently at about {progress}% of this learning path.",
+    )
     subject_id = domain.get("subject") or domain.get("subject_id") or ChemLlmTutor.default_args["subject_id"]
     subject_label = domain.get("subject_label") or subject_id or ChemLlmTutor.default_args["subject_label"]
     domain_id = domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"]
@@ -692,6 +718,9 @@ def build_chem_applet_prompt_args(
         "history": history,
         "student_knowledge_progress": student_knowledge_progress,
         "student_belief": student_belief,
+        "current_progress_status": str(progress_template).format(progress=progress_percent),
+        "applet_initial_instruction": str(applet.get("initial_instruction") or ""),
+        "selected_applet_task": (applet.get("progress_tasks") or {}).get(progress_band, ""),
         "subject_id": subject_id,
         "subject_label": subject_label,
         "domain_id": domain_id,
