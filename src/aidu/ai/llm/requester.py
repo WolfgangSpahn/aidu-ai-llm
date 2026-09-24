@@ -281,7 +281,7 @@ class LLMRequester:
             request_messages = [
                 self._message_as_dict(turn) for turn in effective_context.trace.messages
             ] + [message_dict]
-            logger.info(
+            logger.debug(
                 "Assessment prompt %s model=%s\n%s",
                 assessment_label,
                 getattr(self.client, "model", None),

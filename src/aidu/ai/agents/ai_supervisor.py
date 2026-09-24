@@ -226,5 +226,5 @@ class AiSupervisor(WorkflowAgent, LLMFcRequester):
             ask_params=ask_params,
             ask_config=ask_config,
         )
-        logger.info("AiSupervisor result: %s", result.content())
+        logger.debug("AiSupervisor result: %s", result.content())
         return result, context

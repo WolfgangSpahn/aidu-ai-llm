@@ -125,7 +125,7 @@ class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
                     )
                 ]
             )
-            logger.info("StudentBeliefAssessor off-air result: %s", assessment)
+            logger.debug("StudentBeliefAssessor off-air result: %s", assessment)
             return result, context
 
         if agents is not None:
@@ -137,5 +137,5 @@ class StudentBeliefAssessor(WorkflowAgent, LLMFcRequester):
             ask_params=ask_params,
             ask_config=ask_config,
         )
-        logger.info("StudentBeliefAssessor result: %s", result.content())
+        logger.debug("StudentBeliefAssessor result: %s", result.content())
         return result, context

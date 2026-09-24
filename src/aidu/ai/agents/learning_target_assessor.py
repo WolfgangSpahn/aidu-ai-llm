@@ -286,7 +286,7 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
                     )
                 ]
             )
-            logger.info("LearningTargetAssessor off-air result: %s", assessment)
+            logger.debug("LearningTargetAssessor off-air result: %s", assessment)
             return result, context
 
         # validate that our target and continuations are present in the provided agents list, if any
@@ -300,7 +300,7 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
             ask_params=ask_params,
             ask_config=ask_config,
         )
-        logger.info("LearningTargetAssessor result: %s", result.content())
+        logger.debug("LearningTargetAssessor result: %s", result.content())
         return result, context
 
 

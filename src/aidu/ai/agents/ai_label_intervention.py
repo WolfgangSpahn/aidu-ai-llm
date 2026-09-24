@@ -256,7 +256,7 @@ class AiLabelIntervention(WorkflowAgent, LLMFcRequester):
                     )
                 ]
             )
-            logger.info("AiLabelIntervention off-air result: %s", label)
+            logger.debug("AiLabelIntervention off-air result: %s", label)
             return result, context
 
         if agents is not None:
@@ -268,5 +268,5 @@ class AiLabelIntervention(WorkflowAgent, LLMFcRequester):
             ask_params=ask_params,
             ask_config=ask_config,
         )
-        logger.info("AiLabelIntervention result: %s", result.content())
+        logger.debug("AiLabelIntervention result: %s", result.content())
         return result, context
