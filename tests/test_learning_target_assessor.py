@@ -1,5 +1,6 @@
 from aidu.ai.agents.assessment_context import activity_change, activity_state
 from aidu.ai.agents.learning_target_assessor import (
+    LearningTargetAssessment,
     LearningTargetAssessor,
     TargetEvidenceAssessment,
 )
@@ -19,6 +20,16 @@ def test_misplaced_response_mode_is_recovered_from_support_level():
 
     assert evidence.response_mode == "uncertain"
     assert evidence.support_level == "independent"
+
+
+def test_empty_quote_is_dropped_and_marks_assessment_for_review():
+    assessment = LearningTargetAssessment.model_validate({
+        "evidence": [{"target": "ionic-bonding", "quote": ""}],
+        "review": False,
+    })
+
+    assert assessment.evidence == []
+    assert assessment.review is True
 
 
 def test_assessment_context_exposes_applet_changes_since_tutor_instruction():

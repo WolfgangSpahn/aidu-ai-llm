@@ -81,6 +81,26 @@ class LearningTargetAssessment(BaseModel):
     evidence: list[TargetEvidenceAssessment] = Field(max_length=2)
     review: bool
 
+    @model_validator(mode="before")
+    @classmethod
+    def discard_empty_quotes(cls, value: Any) -> Any:
+        """Keep one unusable quote from invalidating otherwise sound evidence."""
+        if not isinstance(value, dict) or not isinstance(value.get("evidence"), list):
+            return value
+
+        normalized = dict(value)
+        usable = []
+        dropped = False
+        for item in normalized["evidence"]:
+            if isinstance(item, dict) and not str(item.get("quote") or "").strip():
+                dropped = True
+                continue
+            usable.append(item)
+        normalized["evidence"] = usable
+        if dropped:
+            normalized["review"] = True
+        return normalized
+
 
 def pretty_content(content: str):
     try:
@@ -103,7 +123,9 @@ class LearningTargetAssessor(WorkflowAgent, LLMFcRequester):
         quote rule:
         quote must be an exact substring of CURRENT_MESSAGE.
         Never quote the tutor, history, activity state, target text, or your own inference.
-        Omit an evidence item if no exact learner quote exists.
+        Copy the quote verbatim from CURRENT_MESSAGE, including its spelling and
+        punctuation. Omit the entire evidence item if no exact learner quote exists;
+        never emit an empty quote.
 
         SOURCE OF TRUTH — APPLET STATE:
         The structured ACTIVITY_STATE / infoStore and its before-after change
