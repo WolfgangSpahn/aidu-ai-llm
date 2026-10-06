@@ -199,6 +199,17 @@ class StudentKnowledgeProgress(
         mean_mastery = sum(item.mastery for item in assessed) / len(assessed)
         return round(mean_mastery * 100)
 
+    def mean_estimate_percent(self) -> int:
+        """Return the mean learner-model estimate, including neutral priors.
+
+        Unlike :meth:`mean_mastery_percent`, this reports the model's current
+        estimate for every defined target. A fresh target at neutral mastery
+        therefore contributes 50%, even before any assessment evidence exists.
+        """
+        if not self.root:
+            return 0
+        return round(sum(item.mastery for item in self.root.values()) / len(self.root) * 100)
+
     def to_tutor_text(self) -> str:
         """Format progress as guidance that can be inserted into a tutor prompt.
 

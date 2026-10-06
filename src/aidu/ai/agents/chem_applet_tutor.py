@@ -229,6 +229,8 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
     default_args = {
         "subject_id": "TODO_SUBJECT_ID",
         "subject_label": "TODO_SUBJECT_LABEL",
+        "section_id": "",
+        "section_label": "",
         "domain_id": "TODO_DOMAIN_ID",
         "domain_label": "TODO_DOMAIN_LABEL",
         "context_summary": "TODO_ACTIVE_TUTORING_CONTEXT",
@@ -256,6 +258,7 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
         Domain:
 
         - subject: {subject_label} ({subject_id})
+        - section: {section_label} ({section_id})
         - title: {domain_label}
         - domain id: {domain_id}
         - description: {domain_description}
@@ -504,10 +507,30 @@ class ChemLlmTutor(WorkflowAgent, LLMFcRequester):
                 final_message=default_message,
             )
 
+        # Prompt args are initialized when the activity starts, but learner
+        # knowledge is updated throughout the session. Always refresh these
+        # fields from the authoritative context state before asking the LLM.
+        prompt_args = dict(state)
+        knowledge_progress = context.state.data.get("StudentKnowledgeProgress")
+        if isinstance(knowledge_progress, dict):
+            knowledge_progress = StudentKnowledgeProgress.model_validate(knowledge_progress)
+        if isinstance(knowledge_progress, StudentKnowledgeProgress):
+            prompt_args["student_knowledge_progress"] = knowledge_progress.to_tutor_text()
+            # The tutor's progress estimate describes the learner model's
+            # current estimate, including neutral 50% targets. The generic
+            # mean_mastery_percent() intentionally excludes unknown targets
+            # for reporting demonstrated progress, which would turn a fresh
+            # learner model into a misleading 0% prior here.
+            progress_percent = knowledge_progress.mean_estimate_percent()
+            prompt_args["current_progress_status"] = (
+                "Current estimated learning progress: "
+                f"{progress_percent}%."
+            )
+
         result, context = self.ask(
             Message(role="user", content=student_message),
             context,
-            ask_params=state,
+            ask_params=prompt_args,
             ask_config=AskConfig(
                 max_tokens=512,
                 vendor_config={
@@ -699,15 +722,17 @@ def build_chem_applet_prompt_args(
         progress_band = "75-100"
     progress_template = applet.get(
         "progress_status_template",
-        "You are currently at about {progress}% of this learning path.",
+        "It is estimated that you are currently at about {progress}% of this learning path.",
     )
     subject_id = domain.get("subject") or domain.get("subject_id") or ChemLlmTutor.default_args["subject_id"]
     subject_label = domain.get("subject_label") or subject_id or ChemLlmTutor.default_args["subject_label"]
+    section_id = domain.get("section") or domain.get("section_id") or ""
+    section_label = domain.get("section_label") or section_id
     domain_id = domain.get("id") or domain.get("value") or ChemLlmTutor.default_args["domain_id"]
     domain_label = domain.get("label") or domain.get("name") or ChemLlmTutor.default_args["domain_label"]
     context_parts = [
         str(part)
-        for part in (subject_label, domain_label)
+        for part in (subject_label, section_label, domain_label)
         if part and not str(part).startswith("TODO_")
     ]
 
@@ -723,6 +748,8 @@ def build_chem_applet_prompt_args(
         "selected_applet_task": (applet.get("progress_tasks") or {}).get(progress_band, ""),
         "subject_id": subject_id,
         "subject_label": subject_label,
+        "section_id": section_id,
+        "section_label": section_label,
         "domain_id": domain_id,
         "domain_label": domain_label,
         "context_summary": " / ".join(context_parts) or ChemLlmTutor.default_args["context_summary"],

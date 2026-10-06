@@ -33,6 +33,8 @@ class SessionContext(BaseModel):
     activity_id: str = ""
     subject: str = ""
     subject_label: str = ""
+    section: str = ""
+    section_label: str = ""
     domain: str = ""
     domain_label: str = ""
     domain_description: str = ""
@@ -47,6 +49,8 @@ class SessionContext(BaseModel):
         return {
             "subject": self.subject,
             "subject_label": self.subject_label,
+            "section": self.section,
+            "section_label": self.section_label,
             "id": self.domain,
             "label": self.domain_label,
             "description": self.domain_description,

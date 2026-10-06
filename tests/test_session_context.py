@@ -15,6 +15,8 @@ def test_session_context_exposes_domain_prompt_metadata():
     assert context.domain_prompt_metadata() == {
         "subject": "chemistry",
         "subject_label": "Chemistry",
+        "section": "",
+        "section_label": "",
         "id": "atomic-structure",
         "label": "Atomic Structure",
         "description": "How atoms are built.",
